@@ -2,7 +2,7 @@
 title: "TED_sentiment"
 author: "Jeitziner Loris"
 date: "02/11/2020"
-output: html_document
+output: rmarkdown::github_document
 ---
 
 ```{r setup, include=FALSE}

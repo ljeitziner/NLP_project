@@ -1,7 +1,7 @@
 ---
-title: "TED_sentiment"
-author: "Jeitziner Loris"
-date: "02/11/2020"
+title: "TED talks sentiment analysis"
+author: "Loris, Nieves, Olivia"
+date: "06/11/2020"
 output: rmarkdown::github_document
 ---
 
@@ -14,11 +14,13 @@ library(dplyr)
 library(stringr)
 library(stopwords)
 library(ggplot2)
+library(readr)
 
 options(scipen=999)
 
 ```
 
+Data taken from [data.world](https://data.world/owentemple/ted-talks-complete-list).
 
 
 # Load texts and inner join them

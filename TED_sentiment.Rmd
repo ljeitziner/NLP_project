@@ -15,6 +15,7 @@ library(stringr)
 library(stopwords)
 library(ggplot2)
 
+#round numbers
 options(scipen=999)
 
 ```

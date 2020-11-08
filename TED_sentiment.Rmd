@@ -30,7 +30,7 @@ Derived from Reagan (2016), we wish to explore whether TED talks that fit one of
 
 # Load texts and inner join them
 
-```{r, message = F}
+```{r, message = F, warning=F}
 #load data
 data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 
@@ -39,17 +39,14 @@ data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 # Tokenize and add sentiment
 
 ```{r}
-
 #exclude NA talks
 data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
 
 #rename columns with strange names
-data = data %>% rename(id = X.U.FEFF.id)
 data = data %>% rename(views=views_as_of_06162017)
 
 #tokenize the transcripts 
 token_tbl = unnest_tokens(data, input = "transcript", token = "words", to_lower = TRUE, output = "word")
-
 
 
 #relative position of the word for the sentiment analysis -> arc

@@ -32,9 +32,7 @@ Derived from Reagan (2016), we wish to explore whether TED talks that fit one of
 
 ```{r, message = F}
 #load data
-# data = read_csv(file="data/ted.csv")
-data = read.csv(file="data/ted.csv", encoding = "UTF-8")
-
+data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 
 ```
 

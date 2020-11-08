@@ -2,7 +2,7 @@
 title: "TED talks sentiment analysis"
 author: "Jeitziner Loris, Schwab Nieves, Fischer Olivia"
 date: "09/11/2020"
-output: html_document
+output: rmarkdown::github_document
 ---
 
 ```{r setup, include=FALSE}

@@ -11,7 +11,7 @@ According to an article of Reagan (2016), there are six different emotional arcs
 * cinderella (rise-fall-rise -> sinus function)
 * oedipus (fall-rise-fall -> cosinus function)
 
-We belive, that the more applicable a sentiment arc of a TED talk to the six types is, the more succesfall it was (measured in views). 
+We belive, that the more applicable a sentiment arc of a TED talk to the six types is, the more succesfull it was (measured in views). 
 
 To operationalize our idea, we calculated emotional arcs of multiple TED talks from Kaggle TED-talks data.
 We analyze, how good the emotional arcs fit to linear, quadratic or sinus/cosinus models. 

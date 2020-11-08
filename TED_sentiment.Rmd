@@ -1,7 +1,7 @@
 ---
-title: "TED_sentiment"
-author: "Jeitziner Loris"
-date: "02/11/2020"
+title: "TED talks sentiment analysis"
+author: "Jeitziner Loris, Schwab Nieves, Fischer Olivia"
+date: "09/11/2020"
 output: html_document
 ---
 
@@ -22,6 +22,9 @@ options(scipen=999)
 
 ```
 
+TED data taken from [data.world](https://data.world/owentemple/ted-talks-complete-list). The data include information on 2475 TED talks from 1970 to 2017, including unique ID, English transcripts, number of views, and various linguistic data such as percentage of affect words.
+
+Derived from Reagan (2016), we wish to explore whether TED talks that fit one of the six main emotional arcs (see [README.md](https://github.com/ljeitziner/NLP_project/blob/main/README.md) for details) experience more success in terms of number of views. 
 
 
 # Load texts and inner join them
@@ -49,7 +52,7 @@ token_tbl = unnest_tokens(data, input = "transcript", token = "words", to_lower 
 
 
 
-#relative position of the word for the sentiment analysis -> ark
+#relative position of the word for the sentiment analysis -> arc
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   pos = 1:n(),
   rel_pos = (pos-1)/max(pos-1)
@@ -75,7 +78,7 @@ smooth = function(pos, value){
     })
   }
 
-# define the sentiment values as sent_valuees per talk
+# define the sentiment values as sent_values per talk
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   sent_values = smooth(pos, value)
 )
@@ -83,7 +86,7 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
 ```
 
 
-# Plot sentiment arks
+# Plot sentiment arcs
 
 ## the following plots illustrate examples for TED talks from Al Gore.
 
@@ -100,7 +103,7 @@ token_tbl %>% filter(speaker=="Al Gore"  ) %>% ggplot(aes(rel_pos, sent_values,c
 # Calculate models for arcs
 
 
-The idea here is, that all 6 arcs can be illustrated as models.
+The idea here is that all 6 arcs can be illustrated as models.
 The first two arcs are linear models (positive/negative). 
 The third and forth are quadratic (positive/negative), and the last two are cubic (positive/negative) or sinus/cosinus functions (still unclear)
 

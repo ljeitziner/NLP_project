@@ -166,6 +166,12 @@ for(i in talks){
   model_matrix[i,19]= summary(model2)["coefficients"][[1]][4] # cubic term
   model_matrix[i,20]= summary(model2)["coefficients"][[1]][16]  # p-value cubic term
   model_matrix[i,21]= summary(model3)[["r.squared"]][1]
+  
+  # add results from ANOVAs
+   model_matrix[i,22]= anova(model, model2)[[6]][2]
+   model_matrix[i,23]= anova(model2, model3)[[6]][2]
+   model_matrix[i,24]= anova(model, model3)[[6]][2]
+
 }
 
 # token_tbl %>% group_by(id) %>% filter(id==179) %>% select(z_sent_values)

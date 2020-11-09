@@ -19,7 +19,6 @@ By comparison of the calculated r.squared values, we will be able to (1) classif
 
 # Our questions
 
-* Are our assumptions about the six different emotional arcs applicable?
+* Are our assumptions about the six different emotional arcs applicable to our proposed method of classifying the TED talks?
 * Is r.squared a proper value to compare models in this regard?
-* other
-*
+* For the last two arcs, is it possible to define the formula in R like this for fitting our arc to the sinus/cosinus courve?: lm(y ~ cos(x)) / lm(y ~ sin(x))

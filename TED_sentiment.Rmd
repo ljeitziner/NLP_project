@@ -34,22 +34,26 @@ Derived from Reagan (2016), we wish to explore whether TED talks that fit one of
 #load data
 data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 
+
 ```
 
 # Tokenize and add sentiment
 
 ```{r}
+
 #exclude NA talks
 data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
 
 #rename columns with strange names
 data = data %>% rename(views=views_as_of_06162017)
 
+
 #tokenize the transcripts 
 token_tbl = unnest_tokens(data, input = "transcript", token = "words", to_lower = TRUE, output = "word")
 
 
 #relative position of the word for the sentiment analysis -> arc
+n
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   pos = 1:n(),
   rel_pos = (pos-1)/max(pos-1)
@@ -75,7 +79,9 @@ smooth = function(pos, value){
     })
   }
 
+
 # define the sentiment values as sent_values per talk
+
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   sent_values = smooth(pos, value)
 )
@@ -86,6 +92,7 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
 # Plot sentiment arcs
 
 ## the following plots illustrate examples for TED talks from Al Gore.
+
 
 ```{r}
 # plot sentiment arcs not z transformed to compare, color by title
@@ -101,6 +108,7 @@ token_tbl %>% filter(speaker=="Al Gore"  ) %>% ggplot(aes(rel_pos, sent_values,c
 
 
 The idea here is that all 6 arcs can be illustrated as models.
+
 The first two arcs are linear models (positive/negative). 
 The third and forth are quadratic (positive/negative), and the last two are cubic (positive/negative) or sinus/cosinus functions (still unclear)
 
@@ -115,6 +123,7 @@ token_tbl = token_tbl[!is.na(token_tbl$sent_values),]
 # unique IDs in vector for loop through talks
 talks = unique(token_tbl$id)
 
+
 #create matrix for r-squared values
 model_matrix = as.data.frame(matrix(data=NA, nrow= length(talks), ncol = 1))
 
@@ -126,7 +135,9 @@ rownames(model_matrix)=talks
 
 
 #loop through talks an calculate models
+
 #extract intercept, slopes, r squared values and write them into the model matrix
+
 for(i in talks){
   #linear pos
   x=token_tbl[token_tbl$id==i,"rel_pos"][[1]]

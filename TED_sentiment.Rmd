@@ -1,8 +1,8 @@
 ---
-title: "TED_sentiment"
-author: "Jeitziner Loris"
-date: "02/11/2020"
-output: html_document
+title: "TED talks sentiment analysis"
+author: "Jeitziner Loris, Schwab Nieves, Fischer Olivia"
+date: "09/11/2020"
+output: rmarkdown::github_document
 ---
 
 ```{r setup, include=FALSE}
@@ -15,6 +15,7 @@ library(stringr)
 library(stopwords)
 library(ggplot2)
 library(textdata)
+library(readr)
 
 
 #round numbers
@@ -22,13 +23,16 @@ options(scipen=999)
 
 ```
 
+TED data taken from [data.world](https://data.world/owentemple/ted-talks-complete-list). The data include information on 2475 TED talks from 1970 to 2017, including unique ID, English transcripts, number of views, and various linguistic data such as percentage of affect words.
+
+Derived from Reagan (2016), we wish to explore whether TED talks that fit one of the six main emotional arcs (see [README.md](https://github.com/ljeitziner/NLP_project/blob/main/README.md) for details) experience more success in terms of number of views. 
 
 
 # Load texts and inner join them
 
-```{r}
+```{r, message = F, warning=F}
 #load data
-data = read.csv(file="data/ted.csv", encoding = "UTF-8")
+data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 
 
 ```
@@ -41,15 +45,15 @@ data = read.csv(file="data/ted.csv", encoding = "UTF-8")
 data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
 
 #rename columns with strange names
-data = data %>% rename(id = X.U.FEFF.id)
 data = data %>% rename(views=views_as_of_06162017)
+
 
 #tokenize the transcripts 
 token_tbl = unnest_tokens(data, input = "transcript", token = "words", to_lower = TRUE, output = "word")
 
 
-
-#relative position of the word for the sentiment analysis -> ark
+#relative position of the word for the sentiment analysis -> arc
+n
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   pos = 1:n(),
   rel_pos = (pos-1)/max(pos-1)
@@ -75,7 +79,9 @@ smooth = function(pos, value){
     })
   }
 
-# define the sentiment values as sent_valuees per talk
+
+# define the sentiment values as sent_values per talk
+
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   sent_values = smooth(pos, value)
 )
@@ -83,9 +89,10 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
 ```
 
 
-# Plot sentiment arks
+# Plot sentiment arcs
 
 ## the following plots illustrate examples for TED talks from Al Gore.
+
 
 ```{r}
 # plot sentiment arcs not z transformed to compare, color by title
@@ -100,7 +107,8 @@ token_tbl %>% filter(speaker=="Al Gore"  ) %>% ggplot(aes(rel_pos, sent_values,c
 # Calculate models for arcs
 
 
-The idea here is, that all 6 arcs can be illustrated as models.
+The idea here is that all 6 arcs can be illustrated as models.
+
 The first two arcs are linear models (positive/negative). 
 The third and forth are quadratic (positive/negative), and the last two are cubic (positive/negative) or sinus/cosinus functions (still unclear)
 
@@ -115,6 +123,7 @@ token_tbl = token_tbl[!is.na(token_tbl$sent_values),]
 # unique IDs in vector for loop through talks
 talks = unique(token_tbl$id)
 
+
 #create matrix for r-squared values
 model_matrix = as.data.frame(matrix(data=NA, nrow= length(talks), ncol = 1))
 
@@ -126,23 +135,51 @@ rownames(model_matrix)=talks
 
 
 #loop through talks an calculate models
-#extract r squared values und write them into the model matrix
+
+#extract intercept, slopes, r squared values and write them into the model matrix
+
 for(i in talks){
   #linear pos
   x=token_tbl[token_tbl$id==i,"rel_pos"][[1]]
   y=token_tbl[token_tbl$id==i,"sent_values"][[1]]
   # print(i)
   model = lm(formula="y ~ x")
-  model_matrix[i,1]= summary(model)[["r.squared"]][1]
+  model_matrix[i,1]= summary(model)["coefficients"][[1]][1] # intercept
+  model_matrix[i,2]= summary(model)["coefficients"][[1]][7] # p-value intercept
+  model_matrix[i,3]= summary(model)["coefficients"][[1]][2] # slope
+  model_matrix[i,4]= summary(model)["coefficients"][[1]][8] # p-value slope
+  model_matrix[i,5]= summary(model)[["r.squared"]][1]
+  
   
   #quadratisch
   model2 = lm(y ~ x + I(x^2))
-  model_matrix[i,2]= summary(model2)[["r.squared"]][1]
+  model_matrix[i,6]= summary(model2)["coefficients"][[1]][1]
+  model_matrix[i,7]= summary(model2)["coefficients"][[1]][10]
+  model_matrix[i,8]= summary(model2)["coefficients"][[1]][2]
+  model_matrix[i,9]= summary(model2)["coefficients"][[1]][11]
+  model_matrix[i,10]= summary(model2)["coefficients"][[1]][3] # quadratic term
+  model_matrix[i,11]= summary(model2)["coefficients"][[1]][12] # p-value quadr. term
+  model_matrix[i,12]= summary(model2)[["r.squared"]][1]
+
   
   #kubisch -> möglichkeit abzunändern zu sinus/cosinus funktion
   # x3 = poly(x,degree=3))
   model3 = lm(y ~ x + I(x^2) + I(x^3))
-  model_matrix[i,3]= summary(model3)[["r.squared"]][1]
+  model_matrix[i,13]= summary(model2)["coefficients"][[1]][1]
+  model_matrix[i,14]= summary(model2)["coefficients"][[1]][13]
+  model_matrix[i,15]= summary(model2)["coefficients"][[1]][2]
+  model_matrix[i,16]= summary(model2)["coefficients"][[1]][14]
+  model_matrix[i,17]= summary(model2)["coefficients"][[1]][3]
+  model_matrix[i,18]= summary(model2)["coefficients"][[1]][15] 
+  model_matrix[i,19]= summary(model2)["coefficients"][[1]][4] # cubic term
+  model_matrix[i,20]= summary(model2)["coefficients"][[1]][16]  # p-value cubic term
+  model_matrix[i,21]= summary(model3)[["r.squared"]][1]
+  
+  # add results from ANOVAs
+   model_matrix[i,22]= anova(model, model2)[[6]][2]
+   model_matrix[i,23]= anova(model2, model3)[[6]][2]
+   model_matrix[i,24]= anova(model, model3)[[6]][2]
+
 }
 
 # token_tbl %>% group_by(id) %>% filter(id==179) %>% select(z_sent_values)

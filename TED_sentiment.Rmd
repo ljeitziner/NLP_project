@@ -104,6 +104,65 @@ token_tbl %>% filter(speaker=="Al Gore"  ) %>% ggplot(aes(rel_pos, sent_values,c
 
 ```
 
+
+# Arc-iness
+## Calculate sentiment auto-correlation between segments within a talk.
+
+```{r}
+# unique IDs in vector for loop through talks
+talks = unique(token_tbl$id)
+
+# try out idea with first two talks
+talk1 <- token_tbl %>% 
+  filter(id == 1)
+
+talk2 <- token_tbl %>% 
+  filter(id == 2)
+
+# segment talk into 5 (or more?) parts with smooth values
+a <- talk1[1:(0.2*nrow(talk1)),"sent_values"] # first 20% of rows
+b <- talk1[(0.2*nrow(talk1)+1):(0.4*nrow(talk1)),"sent_values"] # second 20% of rows etc.
+c <- talk1[(0.4*nrow(talk1)+1):(0.6*nrow(talk1)), "sent_values"]
+d <- talk1[(0.6*nrow(talk1)+1):(0.8*nrow(talk1)), "sent_values"]
+e <- talk1[(0.8*nrow(talk1)+1):nrow(talk1), "sent_values"]
+
+# save correlations
+ab <- cor(a, b)
+bc <- cor(b, c)
+cd <- cor(c, d)
+de <- cor(d, e)
+
+# mean correlation
+m <- mean(c(ab, bc, cd, de)) # .5
+
+
+# same for talk 2
+a2 <- talk2[1:(0.2*nrow(talk2)),"sent_values"]
+b2 <- talk2[(0.2*nrow(talk2)+1):(0.4*nrow(talk2)),"sent_values"]
+c2 <- talk2[(0.4*nrow(talk2)+1):(0.6*nrow(talk2)), "sent_values"]
+d2 <- talk2[(0.6*nrow(talk2)+1):(0.8*nrow(talk2)), "sent_values"]
+e2 <- talk2[(0.8*nrow(talk2)+1):nrow(talk2), "sent_values"]
+
+# save correlations
+a2b2 <- cor(a2, b2)
+b2c2 <- cor(b2, c2)
+c2d2 <- cor(c2, d2)
+d2e2 <- cor(d2, e2)
+
+# mean correlation
+m2 <- mean(c(a2b2, b2c2, c2d2, d2e2)) # .005
+
+# correlation between mean sentiment auto-correlation and views
+means <- c(m, m2)
+views <- c(unique(talk1$views), unique(talk2$views))
+
+cor(means, views)
+# 1
+
+```
+### Next step: loop/function to automize for each talk
+
+
 # Calculate models for arcs
 
 

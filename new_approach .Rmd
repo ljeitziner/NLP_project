@@ -1,0 +1,204 @@
+---
+title: "TED talks sentiment analysis"
+author: "Jeitziner Loris, Schwab Nieves, Fischer Olivia"
+date: "09/11/2020"
+output: rmarkdown::github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidytext)
+library(dplyr)
+library(stringr)
+library(stopwords)
+library(ggplot2)
+library(textdata)
+library(readr)
+library(tidyverse)
+library(ggrepel) 
+library(viridis)
+library(stringr) 
+
+#round numbers
+options(scipen=999)
+
+```
+
+Note: Information regarding the LIWC Variables comes from their website: https://liwc.wpengine.com/interpreting-liwc-output/
+
+
+# Load texts and inner join them
+
+```{r, message = F, warning=F}
+#load data
+data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
+
+
+```
+
+Before adding the sentiment values we will look at the 10 most popular TED Talks 
+```{r}
+#exclude NA talks
+data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
+
+#rename columns with strange names
+data = data %>% rename(views=views_as_of_06162017)
+
+#Selecting all the talks that were filmed from 2000 to 2007, with a minimal duration of 5 minutes 
+#the duration of the talks should be transformed into minutes and the views into views per million 
+talks <- data %>% filter( year_filmed >= 2000) %>% 
+                          filter(duration >= "00:05:00") %>% #this doesn't seem to work...I wanted to exclude all the talks that were less than 5 minutes 
+                          mutate(views_thousand = views/1000)
+
+View(talks)
+summary(talks$views_thousand)
+```
+
+
+What are the 15 most popular/viewed talks? 
+```{r}
+popular_talks <- talks %>% select("id", "headline", "speaker", "year_filmed", "duration") %>% arrange(desc(talks$views_thousand)) %>% head(15)
+
+not_popular_talks <- talks %>% select("id", "headline", "speaker", "year_filmed", "duration") %>% arrange(talks$views_thousand) %>% head(15)
+
+```
+
+Select the 30 most viewed and the 30 less viewed talks 
+```{r}
+viewed_talks <- talks %>% arrange(desc(talks$views_thousand)) %>% head(30)
+
+not_viewed_talks <- talks %>% arrange(talks$views_thousand) %>% head(30)
+```
+
+Do talks that have a higher affect values have more views? 
+Affect (happy, cried)
+```{r}
+# plot affect and the number of views in thousands 
+affect_and_lotsof_views <- ggplot(viewed_talks, aes(affect, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Affect",y="Views (in thousands)",title="Do affective talks have more views?")+ theme_bw() 
+
+affect_and_little_views <- ggplot(not_viewed_talks, aes(affect, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Affect",y="Views (in thousands) ",title="Do affective talks have less views?")+ theme_bw() 
+```
+
+Positive Emotions (love, nice, sweet) --> The value of positive emotion of a talk is calculated as a percentage of all the words in that talk. For example, 4.2 % of all words in the talk were positive emotions. 
+```{r}
+posemo_and_lotsof_views <- ggplot(viewed_talks, aes(posemo, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Positive Emotions",y="Views (in thousands) ",title="Do talks with positive emotions have more views?")+ theme_bw() 
+
+posemo_and_little_views <- ggplot(not_viewed_talks, aes(posemo, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Positive Emotions",y="Views (in thousands) ",title="Do talks positive emotions have less views?")+ theme_bw() 
+``` 
+
+Negative Emotions (hust, ugly, nasty)
+```{r}
+negemo_and_lotsof_views <- ggplot(viewed_talks, aes(negemo, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Negative Emotions",y="Views (in thousands) ",title="Do talks with negative emotions have more views?")+ theme_bw() 
+
+negemo_and_little_views <- ggplot(not_viewed_talks, aes(negemo, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Negative Emotions",y="Views (in thousands) ",title="Do talks negative emotions have less views?")+ theme_bw() 
+```   
+
+Sadness (crying, grief, sad)
+```{r}
+sad_and_lotsof_views <- ggplot(viewed_talks, aes(sad, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Sadness",y="Views (in thousands) ",title="Do sad talks have more views?")+ theme_bw() 
+
+sad_and_little_views <- ggplot(not_viewed_talks, aes(sad, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Sadness",y="Views (in thousands) ",title="Do sad talks have less views?")+ theme_bw() 
+```  
+
+Tone --> Is one of the four summary variables (with analytical thinking, clout and authenticity). The numbers are standardized scores that have been converted to percentiles (based on the area under a normal curve) ranging from 0 to 100. Although the LIWC includes both positive emotion and negative emotion dimensions, the Tone variable plust the two dimensions into a single summary variable (Cohn, Mehl, & Pennebaker, 2004). The higher the number, the more positive the tone. Numbers below 50 suggest a more negative emotional tone. 
+```{r}
+tone_and_lotsof_views <- ggplot(viewed_talks, aes(Tone, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Tone",y="Views (in thousands) ",title="Do the views depend on the tone of the talk?")+ theme_bw() 
+
+tone_and_little_views <- ggplot(not_viewed_talks, aes(Tone, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Tone",y="Views (in thousands) ",title="Do the views depend on the tone of the talk?")+ theme_bw() 
+```  
+
+Use of common adjectives (like free, happy, long) - there are 764 words in this category 
+```{r}
+adjectives_and_lotsof_views <- ggplot(viewed_talks, aes(adj, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Adjectives",y="Views (in thousands) ",title="Do the views depend on the use of common adjectives of a talk?")+ theme_bw() 
+
+adjectivesand_little_views <- ggplot(not_viewed_talks, aes(adj, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Adjectives",y="Views (in thousands) ",title="Do the views depend on the use of common adjectives of a talk?")+ theme_bw() 
+```  
+
+Maybe try a linear regression to find out which variables explain how much of the high or low number of viewes of a talk. 
+
+
+
+# Tokenize and add sentiment
+
+```{r}
+
+#tokenize the transcripts 
+token_tbl = unnest_tokens(data, input = "transcript", token = "words", to_lower = TRUE, output = "word")
+
+#relative position of the word for the sentiment analysis -> arc
+n
+token_tbl = token_tbl %>% group_by(id) %>% mutate(
+  pos = 1:n(),
+  rel_pos = (pos-1)/max(pos-1)
+)
+
+
+#load the sentiment word from the "afinn" repository
+afinn = get_sentiments("afinn")
+
+#join the tokens with the sentiment words
+token_tbl <- inner_join(y = afinn,x = token_tbl)
+
+
+```
+
+```{r}
+# smoothing function for smoothing the sentiment values relative to the position
+smooth = function(pos, value){ 
+  sm = sapply(pos, function(x) {
+    weights = dnorm(pos, x, max(pos) / 10)
+    sum(value * (weights / sum(weights)))
+    })
+  }
+
+
+# define the sentiment values as sent_values per talk
+
+token_tbl = token_tbl %>% group_by(id) %>% mutate(
+  sent_values = smooth(pos, value)
+)
+
+```
+
+
+# Plot sentiment arcs
+
+## the following plots illustrate examples for TED talks from Al Gore.
+
+```{r}
+# plot sentiment arcs not z transformed to compare, color by title
+token_tbl %>% filter(speaker=="Al Gore"  ) %>% ggplot(aes(rel_pos, sent_values,color=event)) +
+  geom_line(lwd=2) + 
+  labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal()
+```
+
+Trying the data driven approach. Looking at the 10 most viewed and the 10 less viewed TED Talks. --> Would be nice to compare them
+```{r}
+
+less_viewed <- token_tbl %>% arrange(views)
+View(less_viewed)
+most_viewed <- token_tbl %>% arrange(desc(views)) 
+
+titles_most_viewed <- c("Do schools kill creativity?","Your body language shapes who you are", "How great leaders inspire action", "The power of vulnerability", "10 things you didn't know about orgasm", "My stroke of insight", "Why we do what we do", "How to speak so that people want to listen", "Looks aren't everything. Believe me, I'm a model.", "The puzzle of motivation")
+
+  
+most_viewed_plot <- token_tbl %>% filter(headline %in% titles_most_viewed) %>% 
+  ggplot(aes(rel_pos, sent_values,color= headline)) +
+  geom_line(lwd=2) + 
+  labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal()
+
+titles_less_viewed <- c("Plant fuels that could power a jet", "To understand autism, don't look away", "The balancing act of compassion", "A new way to stop identity theft", "I am a pirate", "The camel's hump", "Nature vs. humans", "A parable for Kenya", "Compassion at the dinner table", "Tools for a better world")
+
+less_viewed_plot <- token_tbl %>% filter(headline %in% titles_less_viewed) %>% 
+  ggplot(aes(rel_pos, sent_values,color= headline)) +
+  geom_line(lwd=2) + 
+  labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal()
+
+```
+
+

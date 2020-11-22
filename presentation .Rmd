@@ -1,0 +1,139 @@
+---
+title: "Markdown presentation"
+author: "Loris Jeitziner, Olivia Fischer and Nieves Schwab"
+date: "11/21/2020"
+output: html_document
+---
+## Emotional Arcs in TED Talks 
+
+Background: Stories can have an immense power
+They transport the listener with an emotional journey 
+We construct emotional arc from TED Talks 
+
+Kurt Vonnegut, proposed that there exist "universal shapes" of stories, or emotional arcs, that follow specific pattern in stories. 
+
+Role of emotion in storytelling/stories 
+
+We are interested in discovering if there are distinct emotional arcs and if they can predict the number of views a TED Talk will have. We use a clustering approach 
+
+
+Datset: We analyze a dataset that contains 
+
+
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(dplyr)
+library(tidytext)
+library(dplyr)
+library(stringr)
+library(stopwords)
+library(ggplot2)
+library(textdata)
+library(readr)
+library(tidyverse)
+library(ggrepel) 
+library(viridis)
+library(stringr) 
+library(grid)
+library("cowplot")
+
+#round numbers
+options(scipen=999)
+
+```
+
+```{r, message = F, warning=F}
+#load data
+data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
+
+```
+
+```{r, include=FALSE}
+#exclude NA talks
+data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
+
+#rename columns with strange names
+data = data %>% rename(views=views_as_of_06162017)
+
+#Selecting all the talks that were filmed from 2000 to 2007 and divide views by 1000. 
+talks <- data %>% filter( year_filmed >= 2000) %>% 
+                          mutate(views_thousand = views/1000)
+```
+
+What are the 15 most popular/viewed talks? 
+```{r}
+popular_talks <- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(desc(talks$views_thousand)) %>% head(15)
+
+not_popular_talks <- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(talks$views_thousand) %>% head(15)
+```
+
+Tokenize the data and add sentiment
+```{r, message = F, warning=F}
+#tokenize the transcripts 
+token_tbl = unnest_tokens(data, input = "transcript", token = "words", to_lower = TRUE, output = "word")
+
+#relative position of the word for the sentiment analysis -> arc
+token_tbl = token_tbl %>% group_by(id) %>% mutate(
+  pos = 1:n(),
+  rel_pos = (pos-1)/max(pos-1)
+)
+
+#load the sentiment word from the "afinn" repository
+afinn = get_sentiments("afinn")
+
+#join the tokens with the sentiment words
+token_tbl <- inner_join(y = afinn,x = token_tbl)
+
+```
+
+Smooth sentiment arcs
+```{r}
+# smoothing function for smoothing the sentiment values relative to the position
+smooth = function(pos, value){ 
+  sm = sapply(pos, function(x) {
+    weights = dnorm(pos, x, max(pos) / 10)
+    sum(value * (weights / sum(weights)))
+    })
+  }
+
+
+# define the sentiment values as sent_values per talk
+
+token_tbl = token_tbl %>% group_by(id) %>% mutate(
+  sent_values = smooth(pos, value)
+)
+```
+
+Sentiment Arcs for the most viewed Talks 
+```{r}
+# plot sentiment arcs not z transformed to compare, color by title
+plot_1 <- token_tbl %>% filter(views >= 18253944) %>% ggplot(aes(rel_pos, sent_values, color= headline)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 most viewed TED Talks") + theme_minimal()
+```
+
+Sentiment Arcs for the less viewed talks 
+```{r}
+plot_2 <- token_tbl %>% filter(views <= 218993) %>% ggplot(aes(rel_pos, sent_values, color= headline)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 less viewed TED Talks") + theme_minimal()
+```
+
+
+
+Positive Emotions (love, nice, sweet) --> The value of positive emotion of a talk is calculated as a percentage of all the words in that talk. For example, 4.2 % of all words in the talk were positive emotions. 
+```{r}
+posemo_and_lotsof_views <- ggplot(viewed_talks, aes(posemo, views_thousand))+ geom_point(alpha=0.6)+  labs(x="Positive Emotions",y="Views",title="Positive Emotions")+ theme_bw() 
+
+negemo_and_lotsof_views <- ggplot(viewed_talks, aes(negemo, views_thousand))+ geom_point(alpha=0.6)+  labs(x="Negative Emotions",y="Views",title="Negative Emotions")+ theme_bw() 
+
+plot_grid(posemo_and_lotsof_views,negemo_and_lotsof_views)
+
+``` 
+
+Negative Emotions (hust, ugly, nasty)
+```{r}
+negemo_and_little_views <- ggplot(not_viewed_talks, aes(negemo, views_thousand))+ geom_point(alpha=0.6)+  labs(x="Negative Emotions",y="Views",title="Negative Emotions")+ theme_bw() 
+
+posemo_and_little_views <- ggplot(not_viewed_talks, aes(posemo, views_thousand))+ geom_point(alpha=0.6)+  labs(x="Positive Emotions",y="Views",title="Positive Emotions")+ theme_bw() 
+
+plot_grid(posemo_and_little_views,negemo_and_little_views )
+```   

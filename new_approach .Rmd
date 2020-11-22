@@ -35,7 +35,6 @@ Note: Information regarding the LIWC Variables comes from their website: https:/
 #load data
 data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 
-
 ```
 
 Before adding the sentiment values we will look at the 10 most popular TED Talks 
@@ -76,7 +75,7 @@ Do talks that have a higher affect values have more views?
 Affect (happy, cried)
 ```{r}
 # plot affect and the number of views in thousands 
-affect_and_lotsof_views <- ggplot(viewed_talks, aes(affect, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Affect",y="Views (in thousands)",title="Do affective talks have more views?")+ theme_bw() 
+affect_and_lotsof_views <- ggplot(viewed_talks, aes(affect, views_thousand, size=views))+ geom_point(alpha=0.6)+  labs(x="Affect",y="Views (in thousands)",title="Do affective talks have more views?")+ theme_bw() 
 
 affect_and_little_views <- ggplot(not_viewed_talks, aes(affect, views_thousand, size=views,col= views))+ geom_point(alpha=0.6)+  labs(x="Affect",y="Views (in thousands) ",title="Do affective talks have less views?")+ theme_bw() 
 ```

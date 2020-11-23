@@ -1,24 +1,30 @@
 ---
 title: "Markdown presentation"
 author: "Loris Jeitziner, Olivia Fischer and Nieves Schwab"
-date: "11/21/2020"
+date: "11/24/2020"
 output: html_document
 ---
 ## Emotional Arcs in TED Talks 
 
-Background: Stories can have an immense power
-They transport the listener with an emotional journey 
-We construct emotional arc from TED Talks 
+What does a great commercial, a sales pitch and a scientific presentation have in common? 
 
-Kurt Vonnegut, proposed that there exist "universal shapes" of stories, or emotional arcs, that follow specific pattern in stories. 
+They all try to tell (or sell) a compelling story. 
 
-Role of emotion in storytelling/stories 
+Stories are appealing to us, as they use a tight and logical structure, they help us organize information. It has a logical progression, the classic story structure always looks the same pattern, first the context is set, and the hero is introduced. The hero has a problem or a challenge he has to solve. He struggles, then struggles more and finally he resolves the crises. Happy end. 
 
-We are interested in discovering if there are distinct emotional arcs and if they can predict the number of views a TED Talk will have. We use a clustering approach 
+This ups and downs in the stories are an important element, they capture the audience's interest and take them on an emotional journey. Kurt Vonnegut, proposed that there exist six "universal shapes" of stories, or emotional arcs, that follow specific pattern in stories. 
 
+We propose that emotion plays an important role in storytelling. And we wanted to analyze to which extent. To this purpose we have been looking at data from the masters of storytelling, the speakers of TED Talks. 
 
-Datset: We analyze a dataset that contains 
+According to Wikipedia: TED conferences (Technology, Entertainment, Design) is a media organization that posts talks online for free distribution, under the slogan "ideas worth spreading". They address a wide range of topics within the research and practice of science and culture, often thorugh storytelling. The speakers are given a maximum of 18 minutes to present ideas in the most innovative and engaging way as they can. 
 
+The dataset that we analyze contains 2,386 TED Talks from the years 1972 to 2017. It contains variables like the speaker, headline of the talk, duration, year of publication and... the number of views!
+
+In the last two weeks we have been analyzing this dataset in a data-driven manner, exploring if emotion/valence has an influence on the number of views a talk has. For this purpose we have defined the variable of views as our DV, defining talks with more views are more successful. 
+
+Additional variables contained in the dataset stem from LIWC. They are, for example: word count, tone, number of pos (e.g. ppron), affect,...
+
+#number of emotional words in the headline or description of the video 
 
 
 ```{r setup, include=FALSE}
@@ -37,20 +43,21 @@ library(ggrepel)
 library(viridis)
 library(stringr) 
 library(grid)
-library("cowplot")
+library(wordcloud)
+
 
 #round numbers
 options(scipen=999)
 
 ```
 
+# Data preparation
 ```{r, message = F, warning=F}
 #load data
 data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
-
 ```
 
-```{r, include=FALSE}
+```{r}
 #exclude NA talks
 data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
 
@@ -62,12 +69,65 @@ talks <- data %>% filter( year_filmed >= 2000) %>%
                           mutate(views_thousand = views/1000)
 ```
 
-What are the 15 most popular/viewed talks? 
-```{r}
-popular_talks <- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(desc(talks$views_thousand)) %>% head(15)
+# Let's look at the data: 
 
-not_popular_talks <- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(talks$views_thousand) %>% head(15)
+Actually, there are 45 TED Talks that contain the word "story" in their title. Coincidence? We don't think so! Stories are everywhere, and the emotions conveyed in a story are the essence of a talk. 
+```{r}
+storytelling <- talks %>% select("headline", "id") %>% 
+  filter(str_detect(headline, "story"))
 ```
+
+What are the 25 most popular/viewed talks? Ken Robinson's talk on "Do Schools Kill Creativity?" is the most popular talk of all time with impressive 45'622'906 views. There are 6 talks that have crossed the 20 million mark. 
+```{r}
+summary(data$views)
+
+top_10talks<- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(desc(talks$views_thousand)) %>% head(10)
+
+tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
+
+top <- ggplot(top_10talks, aes(headline, views, fill= views)) +
+  geom_col() +labs(title= "10 most viewed talks") + tilt_theme
+
+top 
+```
+
+The least viewed talk "Plant fuels that could power a jet" has 138'915 views. 
+```{r}
+last_10talks<- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(talks$views_thousand) %>% head(10)
+
+last<- ggplot(last_10talks, aes(headline, views, fill= views)) +
+  geom_col() +labs(title= "10 less viewed talks") + tilt_theme
+last
+```
+
+# Does emotion matter? Emotions in TED Talks 
+Select the 30 most viewed and the 30 less viewed talks 
+```{r}
+viewed_talks <- talks %>% arrange(desc(talks$views_thousand)) %>% head(10)
+
+not_viewed_talks <- talks %>% arrange(talks$views_thousand) %>% head(10)
+```
+
+Positive Emotions (love, nice, sweet) --> The value of positive emotion of a talk is calculated as a percentage of all the words in that talk. For example, 4.2 % of all words in the talk were positive emotions.
+```{r}
+posemo_toptalks<- ggplot(viewed_talks , aes(headline, posemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with positive emotions",title="Positive Emotions - top talks")+ tilt_theme
+posemo_toptalks
+
+posemo_lowtalks <- ggplot(not_viewed_talks, aes(headline, posemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with positive emotions",title="Positive Emotions - last talks")+ tilt_theme
+posemo_lowtalks
+``` 
+
+Negative Emotions (hust, ugly, nasty)
+```{r}
+negemo_toptalks<- ggplot(viewed_talks , aes(headline, negemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with negative emotions",title="Negative Emotions - top talks")+ tilt_theme
+negemo_toptalks
+
+negemo_lowtalks <- ggplot(not_viewed_talks, aes(headline, negemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with negative emotions",title="Negative Emotions - last talks")+ tilt_theme
+negemo_lowtalks
+``` 
+# Emotional Arcs in TED Talks
+
+We are interested in discovering if there are distinct emotional arcs and if they can predict the number of views a TED Talk will have. To plot the sentiment arcs first we have to tokenize the transcripts of the talks and add the sentiment values. 
 
 Tokenize the data and add sentiment
 ```{r, message = F, warning=F}
@@ -85,7 +145,6 @@ afinn = get_sentiments("afinn")
 
 #join the tokens with the sentiment words
 token_tbl <- inner_join(y = afinn,x = token_tbl)
-
 ```
 
 Smooth sentiment arcs
@@ -98,9 +157,7 @@ smooth = function(pos, value){
     })
   }
 
-
 # define the sentiment values as sent_values per talk
-
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   sent_values = smooth(pos, value)
 )
@@ -109,31 +166,14 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
 Sentiment Arcs for the most viewed Talks 
 ```{r}
 # plot sentiment arcs not z transformed to compare, color by title
-plot_1 <- token_tbl %>% filter(views >= 18253944) %>% ggplot(aes(rel_pos, sent_values, color= headline)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 most viewed TED Talks") + theme_minimal()
+sent_top_views <- token_tbl %>% filter(views >= 18253944) %>% ggplot(aes(rel_pos, sent_values, color= headline)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 most viewed TED Talks") + theme_minimal()
+sent_top_views
 ```
 
 Sentiment Arcs for the less viewed talks 
 ```{r}
-plot_2 <- token_tbl %>% filter(views <= 218993) %>% ggplot(aes(rel_pos, sent_values, color= headline)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 less viewed TED Talks") + theme_minimal()
+sent_last_views <- token_tbl %>% filter(views <= 218993) %>% ggplot(aes(rel_pos, sent_values, color= headline)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 less viewed TED Talks") + theme_minimal()
+sent_last_views
 ```
 
 
-
-Positive Emotions (love, nice, sweet) --> The value of positive emotion of a talk is calculated as a percentage of all the words in that talk. For example, 4.2 % of all words in the talk were positive emotions. 
-```{r}
-posemo_and_lotsof_views <- ggplot(viewed_talks, aes(posemo, views_thousand))+ geom_point(alpha=0.6)+  labs(x="Positive Emotions",y="Views",title="Positive Emotions")+ theme_bw() 
-
-negemo_and_lotsof_views <- ggplot(viewed_talks, aes(negemo, views_thousand))+ geom_point(alpha=0.6)+  labs(x="Negative Emotions",y="Views",title="Negative Emotions")+ theme_bw() 
-
-plot_grid(posemo_and_lotsof_views,negemo_and_lotsof_views)
-
-``` 
-
-Negative Emotions (hust, ugly, nasty)
-```{r}
-negemo_and_little_views <- ggplot(not_viewed_talks, aes(negemo, views_thousand))+ geom_point(alpha=0.6)+  labs(x="Negative Emotions",y="Views",title="Negative Emotions")+ theme_bw() 
-
-posemo_and_little_views <- ggplot(not_viewed_talks, aes(posemo, views_thousand))+ geom_point(alpha=0.6)+  labs(x="Positive Emotions",y="Views",title="Positive Emotions")+ theme_bw() 
-
-plot_grid(posemo_and_little_views,negemo_and_little_views )
-```   

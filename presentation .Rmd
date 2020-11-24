@@ -177,3 +177,156 @@ sent_last_views
 ```
 
 
+# Chunking and analysis of clusters to predict number of views
+
+
+```{r include=FALSE, echo=FALSE}
+
+#reduce dataset to necessary variables 
+data_cut = token_tbl %>% select(id, speaker,views, sent_values, value, rel_pos, pos, word)
+
+#make chunks
+n_chunk = 5
+
+data_cut = data_cut %>% group_by(id) %>% mutate(
+  chunk = round(rel_pos/n_chunk, 2)*100
+)
+
+
+#make means per chunk
+data_cut = data_cut %>% group_by(id) %>% group_by(chunk) %>% mutate(
+  mean_chunk = mean(sent_values)
+  
+)
+
+#Cluster analyse
+#Korrelationen
+data_agg = aggregate(data=data_cut, sent_values ~ id + chunk, mean)
+data_agg$sent_values = as.numeric(data_agg$sent_values)
+data_agg$id = as.character(data_agg$id)
+
+data_agg = data_agg %>% group_by(id) %>% mutate(
+  n_group = n()
+)
+
+data_agg = data_agg %>% filter(n_group==21)
+
+data_agg = data_agg %>% group_by(id) %>% mutate(
+  n_group = n()
+)
+
+# select and widen
+data_agg_2 = data_agg %>% select(id, sent_values)
+
+
+#wrangle data into matrix
+data_agg$sent_values = as.numeric(data_agg$sent_values)
+data_agg_2 = as.data.frame(data_agg_2)
+data_agg_2 = data_agg_2 %>% select(id, sent_values)
+data_agg_2 = data_agg_2 %>% group_by(id) %>% mutate(row = row_number())
+data_wide = data_agg_2 %>%pivot_wider(names_from=id, values_from=sent_values) %>% select(-row) 
+
+#setting seed for clustering
+set.seed(240)  
+
+#make it to a matrix
+data_wide = as.matrix(data_wide)
+
+#transpose the matrix for the calculation of euclidian distances
+t_wide = t(data_wide)
+
+#calculate euclidian distances
+dist_data <- daisy(t_wide, stand=TRUE)
+
+#cluster analysis with fast k mediod method -> 10 clusters
+# cluster_analysis_10 <- fastkmed(dist_data, ncluster = 10, iterate = 5000)
+# cluster_analysis <- fastkmed(dist_data, ncluster = 8, iterate = 5000)
+cluster_analysis <- pam(dist_data, k=8 )
+
+# implement cluster information in token dataframe
+cluster_id = cluster_analysis$clustering
+cluster = cluster_analysis[["clustering"]]
+cluster = as.data.frame(cluster)
+ids = names(cluster_id[1:1326])
+ids = as.data.frame(ids)
+cluster$id = ids
+
+colnames(cluster) = c("cluster", "id")
+
+cluster$id = as.numeric(unlist(cluster$id))
+
+# uni_ids = unique(token_tbl$id)
+# uni_ids2 = unique(cluster$id)
+
+
+#add cluster info to token_tbl
+token_tbl_w_cluster <- token_tbl %>%
+  left_join(cluster, by = "id")
+
+# token_tbl_w_cluster[,120:128]
+
+token_tbl_w_cluster = token_tbl_w_cluster %>% filter(!is.na(cluster))
+
+```
+
+## All Clusters - Overview of the arcs
+
+```{r visualize clusters, include=TRUE, echo=FALSE}
+token_tbl_w_cluster %>%  ggplot(aes(rel_pos, sent_values,color=cluster)) +
+  geom_point() + 
+  labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal() + facet_wrap(. ~ cluster)
+```
+
+
+## Comparison between two clusters
+
+```{r visualize clusters2, include=TRUE, echo=FALSE}
+token_tbl_w_cluster %>% filter(cluster==3 | cluster==7) %>% ggplot(aes(rel_pos, sent_values,color=id)) +
+  geom_point() + 
+  labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal() + facet_wrap(. ~ cluster)
+```
+
+
+## Comparison of histograms 
+
+```{r include=TRUE, echo=FALSE}
+
+pred = token_tbl_w_cluster %>% select(id, cluster, views)
+pred = aggregate(data = pred, id ~ cluster + views, mean)
+pred$id = as.factor(pred$id)
+pred$cluster = as.factor(pred$cluster)
+
+model1 = lm(formula = views ~ cluster, data = pred)
+
+pred %>%  ggplot(aes(views ,color=cluster, fill=cluster)) +
+  geom_histogram() + 
+  labs(x = "Views", y = 'Count') + 
+  theme_minimal() + facet_wrap(. ~ cluster)
+```
+
+## Do clusters predict number of views?
+
+```{r include=TRUE, echo=FALSE}
+
+pander(summary(model1))
+
+
+
+```
+
+
+
+
+## Possible reason for this outcome
+
+```{r include=TRUE, echo=FALSE}
+pred %>% filter(cluster ==7)  %>%  ggplot(aes(views ,color=cluster, fill=cluster)) +
+  geom_histogram() + 
+  labs(x = "Views", y = 'Count') + 
+  theme_minimal() + facet_wrap(. ~ cluster)
+```
+
+
+

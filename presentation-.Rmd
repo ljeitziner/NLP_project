@@ -3,8 +3,8 @@ title: "Markdown presentation"
 author: "Loris Jeitziner, Olivia Fischer and Nieves Schwab"
 date: "11/24/2020"
 output:
-  html_document: default
   pdf_document: default
+  html_document: default
 ---
 ## Emotional Arcs in TED Talks 
 
@@ -124,7 +124,6 @@ negemo_toptalks
 negemo_lowtalks <- ggplot(not_viewed_talks, aes(headline, negemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with negative emotions",title="Negative Emotions - last talks")+ tilt_theme
 negemo_lowtalks
 ``` 
-
 # Emotional Arcs in TED Talks
 
 We are interested in discovering if there are distinct emotional arcs and if they can predict the number of views a TED Talk will have. To plot the sentiment arcs first we have to tokenize the transcripts of the talks and add the sentiment values. 
@@ -163,7 +162,7 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
 )
 ```
 
-Sentiment Arcs for the most viewed talks 
+Sentiment Arcs for the most viewed Talks 
 ```{r}
 # plot sentiment arcs not z transformed to compare, color by title
 sent_top_views <- token_tbl %>% filter(views >= 18253944) %>% ggplot(aes(rel_pos, sent_values, color= headline)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 most viewed TED Talks") + theme_minimal()

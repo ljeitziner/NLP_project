@@ -22,19 +22,28 @@ library(PoSI)
 
 
 # load data
-data = read_csv("1_Data/ted.csv", locale = locale(encoding = "UTF-8"))
+data = read_csv("Data/ted.csv", locale = locale(encoding = "UTF-8"))
 
 
 #exclude NA talks
 data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
 
-#rename columns with strange names
-data = data %>% rename(views=views_as_of_06162017)
+#rename columns with strange names and divide views by 1'000 
+data = data %>% rename(views=views_as_of_06162017) %>% mutate(views_thousand = views/1000)
 
-#Selecting all the talks that were filmed from 2009 to 2016 and divide views by 1000.
-### !!! USE date_published INSTEAD OF year_filmed !!! ###
-talks <- data %>% filter(year_filmed >= 2009 & year_filmed < 2017) %>% 
-  mutate(views_thousand = views/1000)
+### WORKING ON THIS PART ### 
+
+#Convert the variable "date_published" into an actual date 
+data$date_published <- as.Date(data$date_published, format = "%m/%d/%y") 
+
+#Select all the talks published between 2006 and 2016. 
+#We use date_published instead of year_filmed. 
+
+data %>% filter(date_published < "2016-12-31")
+
+talks <- data 
+### UNTIL HERE ### 
+
 
 
 ### analyses with log(views) or poisson ###
@@ -92,3 +101,19 @@ plot_pos <- ggplot(talks, aes(posemo,log(views))) +
   labs(title= "Log(views) by % of positive affect words", x = "% of positive affect words", y = "log(views)")
 
 plot_pos
+
+
+### 10% TALKS AND AFFECT 
+
+n(talks$id)
+top_10talks<- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(desc(talks$views_thousand)) %>% head(10)
+
+tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
+
+top <- ggplot(top_10talks, aes(headline, views, fill= views)) +
+  geom_col() +labs(title= "10 most viewed talks") + tilt_theme
+
+
+
+
+

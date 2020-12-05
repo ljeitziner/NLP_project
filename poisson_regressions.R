@@ -19,6 +19,7 @@ library(tidyverse)
 library(tidytext)
 library(textdata)
 library(PoSI)
+library(RColorBrewer)
 
 
 # load data
@@ -105,14 +106,19 @@ plot_pos
 
 ### 10% TALKS AND AFFECT 
 
-top_10talks<- talks %>% select("id", "headline", "speaker", "date_published", "duration", "views") %>% arrange(desc(talks$views_thousand)) %>% head(123)
+top_10talks <- talks %>% 
+  select("id", "headline", "speaker", "date_published", "duration", "views_thousand", "affect") %>% 
+  arrange(desc(talks$views_thousand)) %>% head(123)
 
-tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
-
-top <- ggplot(top_10talks, aes(headline, views, fill= views)) +
-  geom_col() +labs(title= "10 most viewed talks") + tilt_theme
+top <- ggplot(top_10talks, aes(views_thousand, affect)) +
+  geom_point() +labs(title= "10 percent most viewed talks", x= "Views", y = "Affect")
 
 
+bottom_10talks <- talks %>% 
+  select("id", "headline", "speaker", "date_published", "duration", "views_thousand", "affect") %>% 
+  arrange(talks$views_thousand, ) %>% head(123)
 
+bottom <- ggplot(bottom_10talks, aes(views_thousand, affect, col="YlOrRd")) +
+  geom_point() + labs(title= "10 percent less viewed talks", x= "Views", y = "Affect")
 
 

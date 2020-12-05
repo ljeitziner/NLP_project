@@ -39,8 +39,8 @@ data$date_published <- as.Date(data$date_published, format = "%m/%d/%y")
 #Select all the talks published between 2006 and 2016. 
 #We use date_published instead of year_filmed. 
 
-data %>% filter(date_published < "2016-12-31")
-
+data %>% filter(data$date_published != "2017")
+View(data)
 talks <- data 
 ### UNTIL HERE ### 
 
@@ -105,8 +105,7 @@ plot_pos
 
 ### 10% TALKS AND AFFECT 
 
-n(talks$id)
-top_10talks<- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(desc(talks$views_thousand)) %>% head(10)
+top_10talks<- talks %>% select("id", "headline", "speaker", "date_published", "duration", "views") %>% arrange(desc(talks$views_thousand)) %>% head(123)
 
 tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
 

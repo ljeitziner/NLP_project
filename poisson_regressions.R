@@ -99,26 +99,33 @@ talks <- cbind(talks, pred_posemo = predict(poiss_pos))
 plot_pos <- ggplot(talks, aes(posemo,log(views))) + 
   geom_point() +
   geom_smooth(aes(affect, pred_posemo)) +
-  labs(title= "Log(views) by % of positive affect words", x = "% of positive affect words", y = "log(views)")
+  labs(ttopitle= "Log(views) by % of positive affect words", x = "% of positive affect words", y = "log(views)")
 
 plot_pos
 
 
 ### 10% TALKS AND AFFECT 
 
-top_10talks <- talks %>% 
-  select("id", "headline", "speaker", "date_published", "duration", "views_thousand", "affect") %>% 
-  arrange(desc(talks$views_thousand)) %>% head(123)
+# top_10talks <- talks %>% 
+#   select("id", "headline", "speaker", "date_published", "duration", "views_thousand", "affect") %>% 
+#   arrange(desc(talks$views_thousand)) %>% head(123)
 
-top <- ggplot(top_10talks, aes(views_thousand, affect)) +
-  geom_point() +labs(title= "10 percent most viewed talks", x= "Views", y = "Affect")
+
+# alternative to choosing top/bottom 10%
+top_10talks <- talks %>% 
+  select("id", "headline", "speaker", "date_published", "duration", "views", "views_thousand", "affect") %>% 
+  arrange(desc(views)) %>% head(0.1*nrow(talks))
+
+top <- ggplot(top_10talks, aes(affect, log(views))) +
+  geom_point() +labs(title= "10 percent most viewed talks", x= "% of affect words in a talk", y = "log(views")
 
 
 bottom_10talks <- talks %>% 
-  select("id", "headline", "speaker", "date_published", "duration", "views_thousand", "affect") %>% 
-  arrange(talks$views_thousand, ) %>% head(123)
+  select("id", "headline", "speaker", "date_published", "duration", "views", "views_thousand", "affect") %>% 
+  arrange(views) %>% head(0.1*nrow(talks))
 
-bottom <- ggplot(bottom_10talks, aes(views_thousand, affect, col="YlOrRd")) +
-  geom_point() + labs(title= "10 percent less viewed talks", x= "Views", y = "Affect")
+
+bottom <- ggplot(bottom_10talks, aes(affect, log(views))) +
+  geom_point() + labs(title= "10 percent least viewed talks", x= "% of affect words in a talk", y = "log(views)")
 
 

@@ -40,9 +40,9 @@ data$date_published <- as.Date(data$date_published, format = "%m/%d/%y")
 #Select all the talks published between 2006 and 2016. 
 #We use date_published instead of year_filmed. 
 
-data %>% filter(data$date_published != "2017")
-View(data)
-talks <- data 
+
+talks = data %>% filter(date_published > "2005-12-31" & date_published < "2017-01-01")
+
 ### UNTIL HERE ### 
 
 
@@ -83,7 +83,7 @@ talks <- cbind(talks, pred_affect = predict(poiss_aff))
 plot_affect <- ggplot(talks, aes(affect,log(views))) + 
   geom_point() +
   geom_smooth(aes(affect, pred_affect)) +
-  labs(title= "Log(views) by % of affect words", x = "% of affect words", y = "log(views)")
+  labs(title= "Log(views) by % of affect words", x = "% of affect words in a talk", y = "log(views)")
 
 plot_affect
 

@@ -23,7 +23,7 @@ library(RColorBrewer)
 
 
 # load data
-data = read_csv("Data/ted.csv", locale = locale(encoding = "UTF-8"))
+data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 
 
 #exclude NA talks
@@ -60,7 +60,7 @@ affect_normal
 # using log(views)
 affect <- ggplot(talks, aes(affect, log(views))) +
   geom_point() +labs(title= "Log(views) by % of affect words") + tilt_theme +
-  labs(x = "% of affect words", y = "log(views)")
+  labs(x = "% of affect words in a talk", y = "log(views)")
 
 affect 
 
@@ -104,6 +104,36 @@ plot_pos <- ggplot(talks, aes(posemo,log(views))) +
 plot_pos
 
 
+### new variable for number of days online
+talks = talks %>% 
+  mutate(days_online = as.Date("2017-06-16")-date_published)
+
+range(talks$days_online)
+# 175-4007d
+
+# control for days_online
+poiss_aff_t = glm(views ~ affect + days_online, data = talks, family = "poisson")
+summary(poiss_aff_t)
+
+# only days_online as predictor
+poiss_t = glm(views ~ days_online, data = talks, family = "poisson")
+summary(poiss_t)
+
+# add predicted log(views) to talks
+talks <- cbind(talks, pred_t = predict(poiss_t))
+
+
+plot_t = ggplot(talks, aes(days_online,log(views))) + 
+  geom_point() + geom_smooth(aes(days_online, pred_t)) +
+  labs(title = "Log(views) by number of days since online publication", x = "Number of days since online publication")
+
+plot_t
+
+
+## from log (which is natural logarithm) to number: e^log
+# e = 2.71828189
+
+
 ### 10% TALKS AND AFFECT 
 
 # top_10talks <- talks %>% 
@@ -113,7 +143,7 @@ plot_pos
 
 # alternative to choosing top/bottom 10%
 top_10talks <- talks %>% 
-  select("id", "headline", "speaker", "date_published", "duration", "views", "views_thousand", "affect") %>% 
+  select("id", "headline", "speaker", "date_published", "year_filmed", "duration", "views", "views_thousand", "affect") %>% 
   arrange(desc(views)) %>% head(0.1*nrow(talks))
 
 top <- ggplot(top_10talks, aes(affect, log(views))) +
@@ -121,11 +151,25 @@ top <- ggplot(top_10talks, aes(affect, log(views))) +
 
 
 bottom_10talks <- talks %>% 
-  select("id", "headline", "speaker", "date_published", "duration", "views", "views_thousand", "affect") %>% 
+  select("id", "headline", "speaker", "date_published", "year_filmed", "duration", "views", "views_thousand", "affect") %>% 
   arrange(views) %>% head(0.1*nrow(talks))
 
 
 bottom <- ggplot(bottom_10talks, aes(affect, log(views))) +
   geom_point() + labs(title= "10 percent least viewed talks", x= "% of affect words in a talk", y = "log(views)")
+
+
+# plot with top and bottom combined
+topbottom = ggplot() +
+  geom_point(data = top_10talks, aes(affect, log(views), color = "Top 10%")) +
+  geom_point(data = bottom_10talks, aes(affect, log(views), color = "Bottom 10%")) +
+  labs(color = " ", title = "Top and bottom 10% of talks", x = "% of affect words in a talk")
+
+
+# statistical analysis of top vs. bottom
+t.test(top_10talks$affect, bottom_10talks$affect, alternative = "two.sided", mu = 0)
+
+
+
 
 

@@ -43,6 +43,12 @@ library(viridis)
 library(stringr) 
 library(grid)
 library(wordcloud)
+library(ClusterR) 
+library(cluster) 
+library(kmed)
+library(pander)
+# install.packages("cstab")
+library(cstab)
 
 
 #round numbers
@@ -52,78 +58,27 @@ options(scipen=999)
 
 # Data preparation
 ```{r, message = F, warning=F}
-#load data
-data = read_csv("NLP_project/data/TED_dirk.csv", locale = locale(encoding = "UTF-8"))
+#load data  
+
+data = read_csv("data/TED_dirk.csv", locale = locale(encoding = "UTF-8"))
+# data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
+# data$posemo
 ```
 
 ```{r}
 #exclude NA talks
-data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
+# data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
 
 #rename columns with strange names
-data = data %>% rename(views=views_as_of_06162017)
+# data = data %>% rename(views=views_as_of_06162017)
 
 #Selecting all the talks that were filmed from 2000 to 2007 and divide views by 1000. 
-talks <- data %>% filter( year_filmed >= 2000) %>% 
-                          mutate(views_thousand = views/1000)
+# talks <- data %>% filter( year_filmed >= 2000) %>%
+                          # mutate(views_thousand = views/1000)
+
+talks = data
+
 ```
-
-# Let's look at the data: 
-
-Actually, there are 45 TED Talks that contain the word "story" in their title. Coincidence? We don't think so! Stories are everywhere, and the emotions conveyed in a story are the essence of a talk. 
-```{r}
-storytelling <- talks %>% select("headline", "id") %>% 
-  filter(str_detect(headline, "story"))
-```
-
-What are the 25 most popular/viewed talks? Ken Robinson's talk on "Do Schools Kill Creativity?" is the most popular talk of all time with impressive 45'622'906 views. There are 6 talks that have crossed the 20 million mark. 
-```{r}
-summary(data$views)
-
-top_10talks<- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(desc(talks$views_thousand)) %>% head(10)
-
-tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
-
-top <- ggplot(top_10talks, aes(headline, views, fill= views)) +
-  geom_col() +labs(title= "10 most viewed talks") + tilt_theme
-
-top 
-```
-
-The least viewed talk "Plant fuels that could power a jet" has 138'915 views. 
-```{r}
-last_10talks<- talks %>% select("id", "headline", "speaker", "year_filmed", "duration", "views") %>% arrange(talks$views_thousand) %>% head(10)
-
-last<- ggplot(last_10talks, aes(headline, views, fill= views)) +
-  geom_col() +labs(title= "10 less viewed talks") + tilt_theme
-last
-```
-
-# Does emotion matter? Emotions in TED Talks 
-Select the 30 most viewed and the 10 less viewed talks 
-```{r}
-viewed_talks <- talks %>% arrange(desc(talks$views_thousand)) %>% head(10)
-
-not_viewed_talks <- talks %>% arrange(talks$views_thousand) %>% head(10)
-```
-
-Positive Emotions (love, nice, sweet) --> The value of positive emotion of a talk is calculated as a percentage of all the words in that talk. For example, 4.2 % of all words in the talk were positive emotions.
-```{r}
-posemo_toptalks<- ggplot(viewed_talks , aes(headline, posemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with positive emotions",title="Positive Emotions - top talks")+ tilt_theme
-posemo_toptalks
-
-posemo_lowtalks <- ggplot(not_viewed_talks, aes(headline, posemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with positive emotions",title="Positive Emotions - last talks")+ tilt_theme
-posemo_lowtalks
-``` 
-
-Negative Emotions (hust, ugly, nasty)
-```{r}
-negemo_toptalks<- ggplot(viewed_talks , aes(headline, negemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with negative emotions",title="Negative Emotions - top talks")+ tilt_theme
-negemo_toptalks
-
-negemo_lowtalks <- ggplot(not_viewed_talks, aes(headline, negemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with negative emotions",title="Negative Emotions - last talks")+ tilt_theme
-negemo_lowtalks
-``` 
 
 # Emotional Arcs in TED Talks
 
@@ -131,11 +86,14 @@ We are interested in discovering if there are distinct emotional arcs and if the
 
 Tokenize the data and add sentiment
 ```{r, message = F, warning=F}
+
 #tokenize the transcripts 
+# data$transcript
 token_tbl = unnest_tokens(data, input = "transcript", token = "words", to_lower = TRUE, output = "word")
 
-#relative position of the word for the sentiment analysis -> arc
+#relative position of the word for the sentiment analysis -> arc, also add wordcount for LIWC analysis
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
+  word_count = n(),
   pos = 1:n(),
   rel_pos = (pos-1)/max(pos-1)
 )
@@ -145,7 +103,240 @@ afinn = get_sentiments("afinn")
 
 #join the tokens with the sentiment words
 token_tbl <- inner_join(y = afinn,x = token_tbl)
+
+# token_tbl = token_tbl %>% group_by(id) %>% mutate(
+#   pos = 1:n(),
+#   rel_pos = (pos-1)/max(pos-1)
+# )
+
+#add percentage of affect words
+token_tbl = token_tbl %>% group_by(id) %>% mutate(
+  affect = n()/word_count
+)
+
+#add percentage of pos and neg words to the token_tbl
+token_tbl_pos = token_tbl %>% filter(value>0) %>% group_by(id) %>% mutate(
+  posemo = n()/word_count,
+  negemo = 0
+)
+token_tbl_neg = token_tbl %>% filter(value<0) %>% group_by(id) %>% mutate(
+  negemo = n()/word_count,
+  posemo = 0
+)
+
+#bind both subsets
+token_tbl = rbind(token_tbl_neg, token_tbl_pos)
+#arrange by id and rel_pos
+token_tbl = token_tbl %>% arrange(id, rel_pos)
+
+#overwrite zeroes
+token_tbl = token_tbl %>% group_by(id) %>% mutate(
+  negemo = max(negemo),
+  posemo = max(posemo)
+)
+
+token_tbl %>% select(word, word_count, pos, rel_pos, value, posemo, negemo, affect )
+
+
+#add posemo and negemo back to the wide data set
+posnegemo_wide = aggregate(id ~ posemo + negemo + affect, mean, data = token_tbl)
+talks = data %>% left_join(posnegemo_wide, by = "id")
+
+#see if it worked
+talks %>% select(id,affect,  posemo, negemo, views)
+
 ```
+
+
+# Let's look at the data: 
+
+Actually, there are 45 TED Talks that contain the word "story" in their title. Coincidence? We don't think so! Stories are everywhere, and the emotions conveyed in a story are the essence of a talk. 
+```{r}
+# storytelling <- talks %>% select("headline", "id") %>% 
+  # filter(str_detect(headline, "story"))
+```
+
+What are the 25 most popular/viewed talks? Ken Robinson's talk on "Do Schools Kill Creativity?" is the most popular talk of all time with impressive 45'622'906 views. There are 6 talks that have crossed the 20 million mark. 
+```{r}
+summary(data$views)
+
+top_10talks<- talks %>% select("id", "title", "presenter", "event_date", "duration", "views") %>% arrange(desc(talks$views)) %>% head(10)
+
+tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
+
+top <- ggplot(top_10talks, aes(title, views, fill= views)) +
+  geom_col() +labs(title= "10 most viewed talks") + tilt_theme
+
+top 
+```
+
+The least viewed talk "Plant fuels that could power a jet" has 138'915 views. 
+```{r}
+last_10talks<- talks %>% select("id", "title", "presenter", "event_date", "duration", "views") %>% arrange((talks$views)) %>% head(10)
+
+last<- ggplot(last_10talks, aes(title, views, fill= views)) +
+  geom_col() +labs(title= "10 less viewed talks") + tilt_theme
+last
+```
+
+# Does emotion matter? Emotions in TED Talks 
+Select the 30 most viewed and the 10 less viewed talks 
+```{r}
+viewed_talks <- talks %>% arrange(desc(talks$views)) %>% head(10)
+
+not_viewed_talks <- talks %>% arrange(talks$views) %>% head(10)
+```
+
+Positive Emotions (love, nice, sweet) --> The value of positive emotion of a talk is calculated as a percentage of all the words in that talk. For example, 4.2 % of all words in the talk were positive emotions.
+```{r}
+posemo_toptalks<- ggplot(viewed_talks , aes(title, posemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with positive emotions",title="Positive Emotions - top talks")+ tilt_theme
+posemo_toptalks
+
+posemo_lowtalks <- ggplot(not_viewed_talks, aes(title, posemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with positive emotions",title="Positive Emotions - last talks")+ tilt_theme
+posemo_lowtalks
+``` 
+
+Negative Emotions (hust, ugly, nasty)
+```{r}
+negemo_toptalks<- ggplot(viewed_talks , aes(title, negemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with negative emotions",title="Negative Emotions - top talks")+ tilt_theme
+negemo_toptalks
+
+negemo_lowtalks <- ggplot(not_viewed_talks, aes(title, negemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with negative emotions",title="Negative Emotions - last talks")+ tilt_theme
+negemo_lowtalks
+``` 
+
+```{r}
+#poisson regression analysis of talks
+
+#remove na talks
+talks = talks %>% filter(!is.na(affect), .preserve = TRUE)
+talks = talks %>% filter(!is.na(views), .preserve = TRUE)
+
+
+#Convert the variable "date_published" into an actual date 
+talks$upload_date <- as.Date(talks$upload_date, format = "%y/%m/%d")
+
+#Select all the talks published between 2006 and 2016. 
+#We use date_published instead of year_filmed. 
+
+talks %>% select(upload_date) %>%  arrange(desc(upload_date))
+
+# talks = talks %>% filter(upload_date > "2005-12-31" & upload_date < "2019-01-01")
+
+### UNTIL HERE ### 
+
+
+
+### analyses with log(views) or poisson ###
+tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
+
+# normal (not log)
+affect_normal <- ggplot(talks, aes(affect, views)) +
+  geom_point() +labs(title= "Log(views) by % of affect words") + tilt_theme
+
+affect_normal 
+
+
+# using log(views)
+affect <- ggplot(talks, aes(affect, log(views))) +
+  geom_point() +labs(title= "Log(views) by % of affect words") + tilt_theme +
+  labs(x = "% of affect words in a talk", y = "log(views)")
+
+affect 
+
+# positive emotion
+pos <- ggplot(talks, aes(posemo, log(views))) +
+  geom_point() +labs(title= "Log(views) by % of positive affect words") + tilt_theme
+
+pos 
+
+talks %>% select(views, affect) %>% filter(!is.na(views))
+# poisson regression
+poiss_aff <- glm(views ~ affect, family = "poisson", data = talks)
+summary(poiss_aff)
+
+# length(talks$affect)
+# length(talks$views)
+
+# exp(7)
+
+prediction = predict(poiss_aff)
+
+# cor(talks$affect, log(talks$views))
+
+# add predicted log(views) to talks
+talks <-   cbind(talks, pred_affect = prediction)
+
+# nrow(talks)
+
+# plot the points (actual observations), regression line
+plot_affect <- ggplot(talks, aes(affect,log(views))) + 
+  geom_point() +
+  geom_smooth(aes(affect, pred_affect)) +
+  labs(title= "Log(views) by % of affect words", x = "% of affect words in a talk", y = "log(views)")
+
+plot_affect
+
+
+# poisson regression of positive affect
+poiss_pos <- glm(views ~ posemo, family = "poisson", data = talks)
+summary(poiss_pos)
+
+# add predicted log(views) to talks
+talks <- cbind(talks, pred_posemo = predict(poiss_pos))
+
+# plot the points (actual observations), regression line
+plot_pos <- ggplot(talks, aes(posemo,log(views))) + 
+  geom_point() +
+  geom_smooth(aes(affect, pred_posemo)) +
+  labs(ttopitle= "Log(views) by % of positive affect words", x = "% of positive affect words", y = "log(views)")
+
+plot_pos
+
+
+#folgendes ist auskommentiert, kann aber reaktiviert werden
+# ### new variable for number of days online
+# # talks = talks %>% 
+#   mutate(days_online = as.Date("2017-06-16")-date_published)
+# 
+# range(talks$days_online)
+# # 175-4007d
+# 
+# # control for days_online
+# poiss_aff_t = glm(views ~ affect + days_online, data = talks, family = "poisson")
+# summary(poiss_aff_t)
+# 
+# # only days_online as predictor
+# poiss_t = glm(views ~ days_online, data = talks, family = "poisson")
+# summary(poiss_t)
+# 
+# # add predicted log(views) to talks
+# talks <- cbind(talks, pred_t = predict(poiss_t))
+# 
+# 
+# plot_t = ggplot(talks, aes(days_online,log(views))) + 
+#   geom_point() + geom_smooth(aes(days_online, pred_t)) +
+#   labs(title = "Log(views) by number of days since online publication", x = "Number of days since online publication")
+# 
+# plot_t
+
+
+## from log (which is natural logarithm) to number: e^log
+# e = 2.71828189
+
+
+### 10% TALKS AND AFFECT 
+
+# top_10talks <- talks %>% 
+#   select("id", "headline", "speaker", "date_published", "duration", "views_thousand", "affect") %>% 
+#   arrange(desc(talks$views_thousand)) %>% head(123)
+
+
+
+
+
+```
+
 
 Smooth sentiment arcs
 ```{r}
@@ -160,7 +351,11 @@ smooth = function(pos, value){
 # define the sentiment values as sent_values per talk
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   sent_values = smooth(pos, value)
+  # z_sent_values = scale(sent_values)
 )
+
+#z standardize the sentiment values
+token_tbl$z_sent_values = scale(token_tbl$sent_values)
 ```
 
 Sentiment Arcs for the most viewed talks 
@@ -181,9 +376,9 @@ sent_last_views
 
 
 ```{r include=FALSE, echo=FALSE}
-
+library(cluster)
 #reduce dataset to necessary variables 
-data_cut = token_tbl %>% select(id, speaker,views, sent_values, value, rel_pos, pos, word)
+data_cut = token_tbl %>% select(id, presenter,views, sent_values, z_sent_values, value, rel_pos, pos, word)
 
 #make chunks
 n_chunk = 5
@@ -195,14 +390,15 @@ data_cut = data_cut %>% group_by(id) %>% mutate(
 
 #make means per chunk
 data_cut = data_cut %>% group_by(id) %>% group_by(chunk) %>% mutate(
-  mean_chunk = mean(sent_values)
-  
+  mean_chunk = mean(z_sent_values),
+  mean_rel = mean(rel_pos)
 )
 
 #Cluster analyse
 #Korrelationen
-data_agg = aggregate(data=data_cut, sent_values ~ id + chunk, mean)
-data_agg$sent_values = as.numeric(data_agg$sent_values)
+data_agg = aggregate(data=data_cut, z_sent_values ~ id + chunk, mean)
+colnames(data_agg) = c("id", "chunk","z_sent_values")
+data_agg$z_sent_values = as.numeric(data_agg$z_sent_values)
 data_agg$id = as.character(data_agg$id)
 
 data_agg = data_agg %>% group_by(id) %>% mutate(
@@ -216,40 +412,77 @@ data_agg = data_agg %>% group_by(id) %>% mutate(
 )
 
 # select and widen
-data_agg_2 = data_agg %>% select(id, sent_values)
+data_agg_2 = data_agg %>% select(id, z_sent_values)
 
 
 #wrangle data into matrix
-data_agg$sent_values = as.numeric(data_agg$sent_values)
+data_agg$z_sent_values = as.numeric(data_agg$z_sent_values)
 data_agg_2 = as.data.frame(data_agg_2)
-data_agg_2 = data_agg_2 %>% select(id, sent_values)
+data_agg_2 = data_agg_2 %>% select(id, z_sent_values)
 data_agg_2 = data_agg_2 %>% group_by(id) %>% mutate(row = row_number())
-data_wide = data_agg_2 %>%pivot_wider(names_from=id, values_from=sent_values) %>% select(-row) 
-
-#setting seed for clustering
-set.seed(240)  
+data_wide = data_agg_2 %>%pivot_wider(names_from=id, values_from=z_sent_values) %>% select(-row)
 
 #make it to a matrix
 data_wide = as.matrix(data_wide)
 
 #transpose the matrix for the calculation of euclidian distances
 t_wide = t(data_wide)
+```
+
+We used the daisy function for calculating euclidian distances. Furthermore, with the k-mediods approach, we built clusters.
+
+```{r include=TRUE, echo=TRUE}
+#setting seed for clustering
+set.seed(240)  
+
+#number of possible cluster numbers
+kseq=c(2:75)
+
+#find out number of clusters with cstab
+distance = cDistance(t_wide, kseq, method = "hierarchical", linkage = "ward.D",
+kmIter = 10, gapIter = 10)
+
+plot(distance$Jumps)
+plot(distance$Gaps)
+plot(distance$Slopes)
+
+
 
 #calculate euclidian distances
 dist_data <- daisy(t_wide, stand=TRUE)
 
-#cluster analysis with fast k mediod method -> 10 clusters
+# cluster analysis with fast k mediod method -> 10 clusters
 # cluster_analysis_10 <- fastkmed(dist_data, ncluster = 10, iterate = 5000)
 # cluster_analysis <- fastkmed(dist_data, ncluster = 8, iterate = 5000)
-cluster_analysis <- pam(dist_data, k=8 )
+# cluster_analysis <- pam(dist_data, k=24 )
 
-# implement cluster information in token dataframe
-cluster_id = cluster_analysis$clustering
-cluster = cluster_analysis[["clustering"]]
+cluster_analysis <- diana(dist_data, diss=TRUE, metric="euclidean")
+
+
+# Es wird das Kriterium "height" in Abhängigkeit der letzten 10 Fusionierungsschritte dargestellt.
+height <- sort(cluster_analysis$height)
+Schritt <- (length(height)-9):length(height)
+height <- height[(length(height)-9):length(height)]
+data4 <- data.frame(Schritt, height)
+# library(ggplot2)
+ggplot(data4, aes(x=Schritt, y=height)) + geom_line() 
+
+```
+
+
+```{r include=TRUE, echo=FALSE}
+# Vektor "Cluster" mit Clusterzugehörigkeit
+cluster <-  cutree(as.hclust(cluster_analysis), k = 20)  # Clusteranzahl k anpassen
 cluster = as.data.frame(cluster)
-ids = names(cluster_id[1:1326])
+ids = rownames(cluster)
 ids = as.data.frame(ids)
 cluster$id = ids
+
+# implement cluster information in token dataframe
+# cluster_id = cluster_analysis$clustering
+# cluster = cluster_analysis[["clustering"]]
+# cluster = as.data.frame(cluster)
+
 
 colnames(cluster) = c("cluster", "id")
 
@@ -269,64 +502,158 @@ token_tbl_w_cluster = token_tbl_w_cluster %>% filter(!is.na(cluster))
 
 ```
 
-## All Clusters - Overview of the arcs
+The clusters actually show some tendencies, that there are multiple arcs in TED - Talks. 
 
 ```{r visualize clusters, include=TRUE, echo=FALSE}
-token_tbl_w_cluster %>%  ggplot(aes(rel_pos, sent_values,color=cluster)) +
-  geom_point() + 
+
+token_txt %>%   ggplot(aes(rel_pos, sent_values)) +
+  geom_line(size = 1) + 
+  labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal() + ylim(-2, 2)
+
+token_tbl_w_cluster %>%   ggplot(aes(rel_pos, z_sent_values,group = id, color=cluster)) +
+  geom_line(size = 0.1) + 
   labs(x = "Position", y = 'Sentiment') + 
   theme_minimal() + facet_wrap(. ~ cluster)
+
+
+token_tbl_w_cluster %>% filter(cluster==1 | cluster==14 | cluster ==5 | cluster ==7 | cluster ==13 | cluster == 12) %>% ggplot(aes(rel_pos, z_sent_values,group = id, color=cluster)) +
+  geom_line(size = 0.1) + 
+  labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal() + facet_wrap(. ~ cluster)
+
+token_tbl_w_cluster %>% filter(cluster==1) %>% ggplot(aes(rel_pos, z_sent_values,group = id, color=id)) +
+  geom_line(size = 0.1) + 
+  labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal() 
+
+token_tbl_w_cluster$cluster = as.factor(token_tbl_w_cluster$cluster)
+
+token_tbl_w_cluster%>% ggplot(aes(x = reorder(cluster, -log(views)), y  = log(views))) +
+  geom_boxplot() + 
+  labs(x = "Cluster", y = 'log(views)') + 
+  theme_minimal() 
+
+
+token_tbl_w_cluster %>% filter(cluster==13 | cluster ==15  | cluster ==18 | cluster== 12) %>% ggplot(aes(x = reorder(cluster, -log(views)), y  = log(views))) +
+  geom_boxplot() + 
+  labs(x = "Cluster", y = 'log(views)') + 
+  theme_minimal() 
+
+token_tbl_w_cluster %>% filter(cluster==13 | cluster ==15 | cluster ==18 | cluster== 12) %>% ggplot(aes(rel_pos, z_sent_values,group = id, color=id)) +
+  geom_line(size = 0.1) + 
+  labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal() + facet_wrap(.~cluster)
+
 ```
 
 
-## Comparison between two clusters
+## Let's take a closer look at two clusters.
+
+Cluster 7 shows more of a positive linear function, whereas cluster 2 looks like a negative quadratic function.
 
 ```{r visualize clusters2, include=TRUE, echo=FALSE}
-token_tbl_w_cluster %>% filter(cluster==3 | cluster==7) %>% ggplot(aes(rel_pos, sent_values,color=id)) +
-  geom_point() + 
-  labs(x = "Position", y = 'Sentiment') + 
-  theme_minimal() + facet_wrap(. ~ cluster)
+
+# token_tbl_w_cluster$mean_sent_clust_pos  
+
+
+# token_tbl_w_cluster %>% ggplot(aes(rel_pos, z_sent_values,group = id,color=cluster)) +
+#   geom_line(size = 0.1) + labs(x = "Position", y = 'Sentiment') + 
+#   theme_minimal() + facet_wrap(. ~ cluster) 
+
+# + geom_smooth(method = "auto", se=FALSE , color="red")
+
+
+token_tbl_w_cluster %>% filter(cluster==2) %>%  ggplot(aes(rel_pos, z_sent_values,group = id,color=id)) +
+  geom_line(size = 0.1) + labs(x = "Position", y = 'Sentiment') + 
+  theme_minimal() 
+
+#add mean sentiment value per talk
+token_tbl_w_cluster = token_tbl_w_cluster %>% group_by(id) %>% mutate(
+  mean_sent = mean(z_sent_values)
+)
+#Durchschnittsark berechnen für jeden cluster
+
 ```
 
 
-## Comparison of histograms 
+## What's the distribution of views in the seperate clusters?
+
+
 
 ```{r include=TRUE, echo=FALSE}
+# install.packages("sandwich")
+# install.packages("msm")
 
-pred = token_tbl_w_cluster %>% select(id, cluster, views)
-pred = aggregate(data = pred, id ~ cluster + views, mean)
+
+
+require(sandwich)
+require(msm)
+pred = token_tbl_w_cluster %>% select(id, cluster, views, mean_sent)
+
+
+pred = aggregate(data = pred, id ~ cluster + views + mean_sent, mean)
 pred$id = as.factor(pred$id)
 pred$cluster = as.factor(pred$cluster)
 
-model1 = lm(formula = views ~ cluster, data = pred)
 
-pred %>%  ggplot(aes(views ,color=cluster, fill=cluster)) +
+model1 = glm(formula = views ~ cluster + mean_sent, data = pred, family = "poisson")
+model0 = glm(formula = views ~ 1, data = pred, family = "poisson")
+
+
+cov.m1 <- vcovHC(model1, type="HC0")
+std.err <- sqrt(diag(cov.m1))
+r.est <- cbind(Estimate= coef(model1), "Robust SE" = std.err,
+"Pr(>|z|)" = 2 * pnorm(abs(coef(model1)/std.err), lower.tail=FALSE),
+LL = coef(model1) - 1.96 * std.err,
+UL = coef(model1) + 1.96 * std.err)
+
+r.est
+
+with(model1, cbind(res.deviance = deviance, df = df.residual,
+  p = pchisq(deviance, df.residual, lower.tail=FALSE)))
+
+
+
+anova(model1, model0)
+
+# summary(model0)
+summary(model1)
+
+## create the plot
+pred %>% ggplot( aes(y = log(views), x = reorder(cluster, -log(views)), colour = cluster)) +
+  geom_point(aes(), alpha=.5, position=position_jitter(h=.2)) +
+  labs(x = "", y = "")
+
+pred %>%  ggplot(aes(log(views) ,color=cluster, fill=cluster)) +
   geom_histogram() + 
   labs(x = "Views", y = 'Count') + 
   theme_minimal() + facet_wrap(. ~ cluster)
 ```
 
-## Do clusters predict number of views?
+*Conclusion:* They are still heavily skewed.
+
+## But do clusters predict number of views?
 
 ```{r include=TRUE, echo=FALSE}
 
-pander(summary(model1))
+#Effektstärke, Modellgütevergleich, 
+
 
 
 
 ```
 
-
+*Conclusion:* This preliminary analysis actually indicates, that cluster 7 significantly differs form the other clusters. But do we believe, that some clusters are more predictive of success (numbers of views) than others? *NO*
 
 
 ## Possible reason for this outcome
 
 ```{r include=TRUE, echo=FALSE}
-pred %>% filter(cluster ==7)  %>%  ggplot(aes(views ,color=cluster, fill=cluster)) +
+pred %>% filter(cluster ==18)  %>%  ggplot(aes(views ,color=cluster, fill=cluster)) +
   geom_histogram() + 
   labs(x = "Views", y = 'Count') + 
   theme_minimal() + facet_wrap(. ~ cluster)
 ```
 
-
-
+*Conclusion:* The data is heavily skewed. In Cluster 7 we see some really viral TED talks, which most likely explains the results of the linear model. 

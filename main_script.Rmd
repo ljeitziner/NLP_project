@@ -76,6 +76,9 @@ data = read_csv("data/TED_dirk.csv", locale = locale(encoding = "UTF-8"))
 # talks <- data %>% filter( year_filmed >= 2000) %>%
                           # mutate(views_thousand = views/1000)
 
+data = data %>% mutate(views_thousand = views/1000)
+
+
 talks = data
 
 ```
@@ -251,6 +254,7 @@ pos <- ggplot(talks, aes(posemo, log(views))) +
 pos 
 
 talks %>% select(views, affect) %>% filter(!is.na(views))
+
 # poisson regression
 poiss_aff <- glm(views ~ affect, family = "poisson", data = talks)
 summary(poiss_aff)
@@ -269,11 +273,14 @@ talks <-   cbind(talks, pred_affect = prediction)
 
 # nrow(talks)
 
+
+
 # plot the points (actual observations), regression line
 plot_affect <- ggplot(talks, aes(affect,log(views))) + 
   geom_point() +
   geom_smooth(aes(affect, pred_affect)) +
-  labs(title= "Log(views) by % of affect words", x = "% of affect words in a talk", y = "log(views)")
+  labs(title= "Log(views) by % of affect words", x = "% of affect words in a talk", y = "log(views)")+
+  ylim(8,18)+xlim(0,0.2)
 
 plot_affect
 
@@ -285,13 +292,33 @@ summary(poiss_pos)
 # add predicted log(views) to talks
 talks <- cbind(talks, pred_posemo = predict(poiss_pos))
 
-# plot the points (actual observations), regression line
-plot_pos <- ggplot(talks, aes(posemo,log(views))) + 
-  geom_point() +
-  geom_smooth(aes(affect, pred_posemo)) +
-  labs(ttopitle= "Log(views) by % of positive affect words", x = "% of positive affect words", y = "log(views)")
 
-plot_pos
+
+
+#vergleich des alten datensatzes
+poiss_aff2 = glm(views_as_of_06162017 ~ affect, data = data2, family = "poisson")
+summary(poiss_aff2)
+
+length(data2$affect)
+data2 = data2 %>% filter(!is.na(affect))
+
+ggplot(data2, aes(affect,log(views_as_of_06162017))) + 
+  geom_point() +
+  geom_smooth(aes(affect, predict(poiss_aff2))) +
+  labs(title= "Log(views) by % of affect words", x = "% of affect words in a talk", y = "log(views)")+ 
+  ylim(8,18)+xlim(0,20)
+
+
+
+# # plot the points (actual observations), regression line
+# plot_pos <- ggplot(talks, aes(posemo,log(views))) + 
+#   geom_point() +
+#   geom_smooth(aes(affect, pred_posemo)) +
+#   labs(ttopitle= "Log(views) by % of positive affect words", x = "% of positive affect words", y = "log(views)")+
+#   ylim(8,18)+xlim(0,0.2)
+# 
+# plot_pos
+
 
 
 #folgendes ist auskommentiert, kann aber reaktiviert werden
@@ -302,9 +329,8 @@ plot_pos
 # range(talks$days_online)
 # # 175-4007d
 # 
-# # control for days_online
-# poiss_aff_t = glm(views ~ affect + days_online, data = talks, family = "poisson")
-# summary(poiss_aff_t)
+# control for days_online
+
 # 
 # # only days_online as predictor
 # poiss_t = glm(views ~ days_online, data = talks, family = "poisson")
@@ -361,13 +387,13 @@ token_tbl$z_sent_values = scale(token_tbl$sent_values)
 Sentiment Arcs for the most viewed talks 
 ```{r}
 # plot sentiment arcs not z transformed to compare, color by title
-sent_top_views <- token_tbl %>% filter(views >= 18253944) %>% ggplot(aes(rel_pos, sent_values, color= headline)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 most viewed TED Talks") + theme_minimal()
+sent_top_views <- token_tbl %>% filter(views >= 18253944) %>% ggplot(aes(rel_pos, sent_values, color= title)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 most viewed TED Talks") + theme_minimal()
 sent_top_views
 ```
 
 Sentiment Arcs for the less viewed talks 
 ```{r}
-sent_last_views <- token_tbl %>% filter(views <= 218993) %>% ggplot(aes(rel_pos, sent_values, color= headline)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 less viewed TED Talks") + theme_minimal()
+sent_last_views <- token_tbl %>% filter(views <= 218993) %>% ggplot(aes(rel_pos, sent_values, color= title)) +geom_line(lwd=2) +  labs(x = "Position", y = 'Sentiment',  title= "Emotional Arcs for the 10 less viewed TED Talks") + theme_minimal()
 sent_last_views
 ```
 

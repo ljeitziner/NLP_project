@@ -23,8 +23,32 @@ library(RColorBrewer)
 
 
 # load data
-data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
+data2 = read_csv("NLP_project/data/ted.csv", locale = locale(encoding = "UTF-8"))
+# data2$posemo
+# data2$negemo
+# data2$affect
+# hist(data2$affect)
+# hist(talks$affect*100)
+# 
+# affect_ted = data2$affect
+# affect_ted = cbind(affect_ted, rep(1, length(affect_ted)))
+# affect_dirk = talks$affec*100
+# affect_dirk = cbind(affect_dirk, rep(2, length(affect_dirk)))
+# 
+# affect_comparison = as.data.frame(rbind(affect_dirk, affect_ted))
+# 
+# affect_comparison %>%  ggplot(aes(affect_dirk ,color=V2, fill=V2)) +
+#   geom_histogram() + 
+#   theme_minimal() + facet_wrap(. ~ V2, nrow = 2)+
+#   labs(x = "percentage of affect words", y = 'Count of affectwords') 
+#   
+# 
+# 
+# hist(log(data$views))
+# hist(log(data2$views_as_of_06162017))
 
+exp(0.136)
+exp(4.136)
 
 #exclude NA talks
 data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
@@ -91,6 +115,10 @@ plot_affect
 # poisson regression of positive affect
 poiss_pos <- glm(views ~ posemo, family = "poisson", data = talks)
 summary(poiss_pos)
+
+# poisson regression of positive affect
+poiss <- glm(views ~ affect, family = "poisson", data = talks)
+summary(poiss)
 
 # add predicted log(views) to talks
 talks <- cbind(talks, pred_posemo = predict(poiss_pos))

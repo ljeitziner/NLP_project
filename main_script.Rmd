@@ -61,6 +61,8 @@ options(scipen=999)
 #load data  
 
 data = read_csv("data/TED_dirk.csv", locale = locale(encoding = "UTF-8"))
+data2 = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
+
 # data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 # data$posemo
 ```
@@ -72,16 +74,36 @@ data = read_csv("data/TED_dirk.csv", locale = locale(encoding = "UTF-8"))
 #rename columns with strange names
 # data = data %>% rename(views=views_as_of_06162017)
 
-#Selecting all the talks that were filmed from 2000 to 2007 and divide views by 1000. 
-# talks <- data %>% filter( year_filmed >= 2000) %>%
-                          # mutate(views_thousand = views/1000)
+#Selecting all the talks that were filmed from 2000 to 2017
+# data <- data %>% filter( upload_date <= "2017-06-01")                           
+# data <- data %>% filter( upload_date >= "2017-06-01" & log(views) >= 12)         
 
-data = data %>% mutate(views_thousand = views/1000)
-
-
+#new subset
 talks = data
 
 ```
+
+
+```{r}
+#Take a look at the data
+data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
+  geom_point() + 
+  labs(x = "Upload Date", y = 'log(Views)') + 
+  theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
+
+#It seems that at some point (end of 2017) the number of videos exploaded. also there are now more videos with less views
+data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(upload_date)) +
+  geom_histogram() + 
+  labs(x = "Upload Date") + 
+  theme_minimal()
+
+#are the variables views and views_youtube similar?
+both_views = as.data.frame(cbind(data$views, data$views_youtube))
+both_views = na.omit(both_views)
+cor(both_views$V1, both_views$V2)
+  
+```
+
 
 # Emotional Arcs in TED Talks
 
@@ -532,7 +554,7 @@ The clusters actually show some tendencies, that there are multiple arcs in TED 
 
 ```{r visualize clusters, include=TRUE, echo=FALSE}
 
-token_txt %>%   ggplot(aes(rel_pos, sent_values)) +
+token_tbl %>%   ggplot(aes(rel_pos, sent_values)) +
   geom_line(size = 1) + 
   labs(x = "Position", y = 'Sentiment') + 
   theme_minimal() + ylim(-2, 2)

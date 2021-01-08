@@ -49,6 +49,8 @@ library(kmed)
 library(pander)
 # install.packages("cstab")
 library(cstab)
+# install.packages("sentimentr")
+library(sentimentr)
 
 
 #round numbers
@@ -705,3 +707,36 @@ pred %>% filter(cluster ==18)  %>%  ggplot(aes(views ,color=cluster, fill=cluste
 ```
 
 *Conclusion:* The data is heavily skewed. In Cluster 7 we see some really viral TED talks, which most likely explains the results of the linear model. 
+
+
+
+# Approach with sentimentr package
+
+```{r}
+
+
+#tokenize the transcripts 
+# data$transcript
+token_sentences = unnest_tokens(data, input = "transcript", token = "sentences", to_lower = TRUE, output = "sentence")
+
+#relative position of the word for the sentiment analysis -> arc, also add wordcount for LIWC analysis
+token_sentences = token_sentences %>% group_by(id) %>% mutate(
+  sentence_count = n(),
+  pos = 1:n(),
+  rel_pos = (pos-1)/max(pos-1)
+)
+
+
+### DOES NOT WORK YET ###
+# token_sentences = get_sentences(data$transcript)
+# sentiment=sentiment(token_sentences)
+
+#load the sentiment word from the "afinn" repository
+afinn = get_sentiments("afinn")
+
+#join the tokens with the sentiment words
+token_tbl <- inner_join(y = afinn,x = token_tbl)
+
+
+```
+

@@ -51,7 +51,12 @@ library(pander)
 library(cstab)
 # install.packages("sentimentr")
 library(sentimentr)
-
+library(caret)
+# install.packages("party")
+library(party)
+# install.packages("partykit")
+library(partykit)
+library(lubridate)
 
 #round numbers
 options(scipen=999)
@@ -67,6 +72,286 @@ data2 = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 
 # data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 # data$posemo
+
+str_replace_all(data$duration, "[:alpha:]" , "")
+
+#change duration to usable format
+#omit letters
+data = data %>% mutate(
+  duration = str_replace_all(data$duration, "[:alpha:]" , "")
+)
+#add colon
+data = data %>% mutate(
+  duration = str_replace_all(data$duration, "[:blank:]" , ":")
+)
+#define as time
+data = data %>% mutate(
+  duration = ms(data$duration)
+)
+
+```
+
+
+# Data cleaning
+
+
+```{r}
+
+#here we try to clean the data from the 2017 problematic
+
+
+### TOP-Down approach ###
+
+#omit all independent ted talks
+# unique(data$event)
+
+#mark all TEDx events
+data = data %>% mutate(
+  tedx = case_when(
+    #identify TEDx events
+    str_detect(data$event, "TEDx") ~ "TEDx",
+    !str_detect(data$event, "TEDx") ~ "TED"
+  )
+)
+
+# unique(data$tedx)
+data$tedx = as.factor(data$tedx)
+#filter out all TEDx events
+# data = data %>% filter(tedx == "TED")
+
+
+
+### Bottom up Analysis ###
+#define bad data and good data
+data = data %>% mutate(
+  good_bad = case_when(
+    (upload_date >= "2017-06-01" & log(views) < 13.5) ~ 1,
+    !(upload_date >= "2017-06-01" & log(views) < 13.5)  ~ 0
+    ) 
+)
+data$good_bad = as.factor(data$good_bad)
+data = data %>% filter(!is.na(good_bad))
+
+#filter
+# bad_data = data %>% filter(upload_date >= "2017-06-01" & log(views) < 13.5) 
+# good_data = data %>% filter(!(upload_date >= "2017-06-01" & log(views) < 13.5))
+
+### lasso analysis of what predicts good/bad data ###
+
+train_index <- createDataPartition(data$good_bad, p = .8, list = FALSE)
+# train and test sets
+data_train <- data %>% select(id, presenter, event, upload_date, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(train_index)
+data_test  <- data %>% select(id, presenter, event, upload_date, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(-train_index)
+
+data = data %>% mutate(
+  id = as.factor(id),
+  presenter = as.factor(id),
+  tedx = as.factor(id)
+)
+
+# fitting -----------------------------------------------------------------
+
+
+
+# Set training method to "none" for simple fitting
+ctrl_none <- trainControl(method = "none")
+
+grad_glm <- train(form = good_bad ~ .,
+                  data = data_train,
+                  method = "glm",
+                  family = "binomial",
+                  trControl = ctrl_none,
+                  na.action  = na.pass
+                  )
+
+grad_glm$finalModel
+summary(grad_glm$finalModel)
+
+
+# Save fitted values of regression model
+glm_fit <- predict(grad_glm)
+
+# Explore regression model fits
+glm_fit
+summary(glm_fit)
+hist(glm_fit)
+
+
+# Decision Trees ----------------------------------------------------------
+
+grad_rpart <- train(form = good_bad ~ .,
+                    data = data_train,
+                    method = "rpart",
+                    trControl = ctrl_none,
+                    tuneGrid = expand.grid(cp = 0.01))
+
+
+grad_rpart
+summary(grad_rpart$finalModel)
+plot(as.party(grad_rpart$finalModel))
+
+# Save fitted values of decision tree model
+rpart_fit <- predict(grad_rpart)
+
+# Explore decision tree fits
+rpart_fit
+summary(rpart_fit)
+hist(rpart_fit)
+
+
+
+# Random Forest -----------------------------------------------------------
+
+grad_rf <- train(form = good_bad ~ .,  
+                 data = data_train,
+                 method = "rf",
+                 trControl = ctrl_none,
+                 tuneGrid = expand.grid(mtry = 2))  
+
+
+# Save fitted values of random forest model
+rf_fit <- predict(grad_rf)
+
+rf_fit
+summary(rf_fit)
+hist(rf_fit)
+
+
+# evaluate fitting models -------------------------------------------------
+
+# Save training criterion values
+criterion_train <- data_train$good_bad
+
+# Regression
+postResample(pred = glm_fit, obs = criterion_train)
+
+# Decision Trees
+postResample(pred = rpart_fit, obs = criterion_train)
+
+# Random Forests
+postResample(pred = rf_fit, obs = criterion_train)
+
+
+
+# Evaluate prediction perforamnce -----------------------------------------
+
+# Save criterion values
+criterion_test <- data_test$good_bad
+
+# Regression
+glm_pred <- predict(grad_glm, newdata = data_test )
+
+# Decision Trees
+rpart_pred <- predict(grad_rpart, newdata = data_test )
+
+# Random Forests
+rf_pred <- predict(grad_rf, newdata = data_test )
+
+
+# Regression
+postResample(pred = glm_pred, obs = criterion_test)
+
+# Decision Trees
+postResample(pred = rpart_pred, obs = criterion_test)
+
+# Random Forests
+postResample(pred = rf_pred, obs = criterion_test)
+
+
+# Tuning ------------------------------------------------------------------
+
+# install.packages("glmnet")
+
+# Set training method to "none" for simple fitting
+ctrl_cv <- trainControl(method = "cv", number = 10)
+
+
+
+# Lasso -------------------------------------------------------------------
+
+
+
+# Vector of lambda values to try
+lambda_vec <- seq(.000000001, .0003, length=100)
+
+
+# lasso regression
+grad_tune_glm <- train(form = good_bad ~ .-HispanicLatino -Position - State - Department - ManagerName,
+                       data = data_train,
+                       method = "glmnet",
+                       trControl = ctrl_cv,
+                       preProcess = c("center", "scale"),  
+                       tuneGrid = expand.grid(alpha = 1, 
+                                              lambda = lambda_vec))
+
+plot(grad_tune_glm)
+
+coef(grad_tune_glm$finalModel, 
+     grad_tune_glm$bestTune$lambda)
+
+
+# Decision Tree -----------------------------------------------------------
+
+
+
+cp_vec <- seq(0, .1, length = 10)
+
+# Decision tree 
+grad_tune_rpart <- train(form = good_bad ~ .,
+                         data = data_train,
+                         method = "rpart",
+                         trControl = ctrl_cv,
+                         tuneGrid = expand.grid(cp = cp_vec))
+
+# Plot grad_tune_rpart object
+plot(grad_tune_rpart)
+
+grad_tune_rpart$bestTune$cp
+
+plot(as.party(grad_tune_rpart$finalModel)) 
+
+
+
+# Random Forest -----------------------------------------------------------
+
+mtry_vec <- seq(1, 25, 1)
+
+
+# Random Forest 
+grad_tune_rf <- train(form = good_bad ~ .,
+                      data = data_train,
+                      method = "rf",
+                      trControl = ctrl_cv,
+                      tuneGrid = expand.grid(mtry = mtry_vec))
+
+plot(grad_tune_rf)
+
+grad_tune_rf$bestTune$mtry
+
+# Evaluation prediction performance of tuned models -----------------------
+
+glm_tune_pred <- predict(grad_tune_rf, newdata = data_test )
+
+rpart_tune_pred  <- predict(grad_tune_rpart, newdata = data_test )
+
+rf_tune_pred  <- predict(grad_tune_glm, newdata = data_test )
+
+# Regression
+postResample(pred = glm_tune_pred, obs = criterion_test)
+
+# Decision Trees
+postResample(pred = rpart_tune_pred, obs = criterion_test)
+
+# Random Forests
+postResample(pred = rf_tune_pred, obs = criterion_test)
+
+
+
+# modelmatrix -------------------------------------------------------------
+
+model.matrix(good_bad ~ . , data = data)
+
+
 ```
 
 ```{r}
@@ -104,6 +389,20 @@ both_views = as.data.frame(cbind(data$views, data$views_youtube))
 both_views = na.omit(both_views)
 cor(both_views$V1, both_views$V2)
   
+
+#compare good and bad data
+
+good_data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
+  geom_point() + 
+  labs(x = "Upload Date", y = 'log(Views)') + 
+  theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
+
+bad_data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
+  geom_point() + 
+  labs(x = "Upload Date", y = 'log(Views)') + 
+  theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
+
+
 ```
 
 
@@ -138,7 +437,7 @@ token_tbl <- inner_join(y = afinn,x = token_tbl)
 
 #add percentage of affect words
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
-  affect = n()/word_count
+  affect = (n()/word_count)
 )
 
 #add percentage of pos and neg words to the token_tbl
@@ -153,6 +452,7 @@ token_tbl_neg = token_tbl %>% filter(value<0) %>% group_by(id) %>% mutate(
 
 #bind both subsets
 token_tbl = rbind(token_tbl_neg, token_tbl_pos)
+
 #arrange by id and rel_pos
 token_tbl = token_tbl %>% arrange(id, rel_pos)
 
@@ -171,6 +471,8 @@ talks = data %>% left_join(posnegemo_wide, by = "id")
 
 #see if it worked
 talks %>% select(id,affect,  posemo, negemo, views)
+
+# talks$affect
 
 ```
 
@@ -250,9 +552,6 @@ talks %>% select(upload_date) %>%  arrange(desc(upload_date))
 
 # talks = talks %>% filter(upload_date > "2005-12-31" & upload_date < "2019-01-01")
 
-### UNTIL HERE ### 
-
-
 
 ### analyses with log(views) or poisson ###
 tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
@@ -320,17 +619,25 @@ talks <- cbind(talks, pred_posemo = predict(poiss_pos))
 
 
 #vergleich des alten datensatzes
+
+#scale affect to the same level as the new dataset
+data2$affect = data2$affect /100
+
+#run regression
 poiss_aff2 = glm(views_as_of_06162017 ~ affect, data = data2, family = "poisson")
 summary(poiss_aff2)
 
-length(data2$affect)
+# length(data2$affect)
+
+#filer out NA's
 data2 = data2 %>% filter(!is.na(affect))
 
-ggplot(data2, aes(affect,log(views_as_of_06162017))) + 
+#Plot scatterplot between affect and log(views)
+ggplot(data2, aes((affect),log(views_as_of_06162017))) + 
   geom_point() +
   geom_smooth(aes(affect, predict(poiss_aff2))) +
   labs(title= "Log(views) by % of affect words", x = "% of affect words in a talk", y = "log(views)")+ 
-  ylim(8,18)+xlim(0,20)
+  ylim(8,18)+xlim(0,0.2)
 
 
 
@@ -380,7 +687,6 @@ ggplot(data2, aes(affect,log(views_as_of_06162017))) +
 # top_10talks <- talks %>% 
 #   select("id", "headline", "speaker", "date_published", "duration", "views_thousand", "affect") %>% 
 #   arrange(desc(talks$views_thousand)) %>% head(123)
-
 
 
 

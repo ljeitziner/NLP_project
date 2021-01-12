@@ -117,7 +117,7 @@ data = data %>% mutate(
 # unique(data$tedx)
 data$tedx = as.factor(data$tedx)
 #filter out all TEDx events
-# data = data %>% filter(tedx == "TED")
+data = data %>% filter(tedx == "TED")
 
 
 
@@ -130,76 +130,27 @@ data = data %>% mutate(
     ) 
 )
 data$good_bad = as.factor(data$good_bad)
-data = data %>% filter(!is.na(good_bad))
+data$event = as.factor(data$event)
+# table(data$event)
+# data = data %>% filter(!is.na(good_bad))
 data = na.omit(data)
+
 
 #filter
 # bad_data = data %>% filter(upload_date >= "2017-06-01" & log(views) < 13.5) 
 # good_data = data %>% filter(!(upload_date >= "2017-06-01" & log(views) < 13.5))
 
+
+
 ### lasso analysis of what predicts good/bad data ###
 
 train_index <- createDataPartition(data$good_bad, p = .8, list = FALSE)
 # train and test sets
-data_train <- data %>% select(id, presenter, event, upload_date, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(train_index)
-data_test  <- data %>% select(id, presenter, event, upload_date, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(-train_index)
+data_train <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(train_index)
+data_test  <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(-train_index)
 
 data_train <- data_train %>% mutate_if(is.character, factor)
 data_test <- data_test %>% mutate_if(is.character, factor)
-
-
-# data_train <- model.matrix( ~ ., data_train)
-# data_test <- model.matrix( ~ ., data_test)
-
-# fitting -----------------------------------------------------------------
-
-# table(data$presenter)
-
-# Set training method to "none" for simple fitting
-ctrl_none <- trainControl(method = "none")
-
-grad_glm <- train(form = good_bad ~ id + event + duration + views + likes + dislike + tedx  ,
-                  data = data_train,
-                  method = "glm",
-                  family = "binomial",
-                  trControl = ctrl_none,
-                  na.action  = na.pass
-                  )
-
-grad_glm$finalModel
-summary(grad_glm$finalModel)
-
-
-# Save fitted values of regression model
-glm_fit <- predict(grad_glm)
-
-# Explore regression model fits
-glm_fit
-summary(glm_fit)
-hist(glm_fit)
-
-
-# evaluate fitting models -------------------------------------------------
-
-# Save training criterion values
-criterion_train <- data_train$good_bad
-
-# Regression
-postResample(pred = glm_fit, obs = criterion_train)
-
-
-# Evaluate prediction perforamnce -----------------------------------------
-
-# Save criterion values
-criterion_test <- data_test$good_bad
-
-# Regression
-glm_pred <- predict(grad_glm, newdata = data_test )
-
-
-# Regression
-postResample(pred = glm_pred, obs = criterion_test)
-
 
 
 # Tuning ------------------------------------------------------------------
@@ -229,72 +180,15 @@ grad_tune_glm <- train(form = good_bad ~ .,
                                               lambda = lambda_vec),
                        na.action = na.pass)
 
+
+predictions_lasso <- grad_tune_glm %>% predict(data_test)
+
 plot(grad_tune_glm)
 
 coef(grad_tune_glm$finalModel, 
      grad_tune_glm$bestTune$lambda)
 
 
-# Decision Tree -----------------------------------------------------------
-
-
-
-cp_vec <- seq(0, .1, length = 10)
-
-# Decision tree 
-grad_tune_rpart <- train(form = good_bad ~ .,
-                         data = data_train,
-                         method = "rpart",
-                         trControl = ctrl_cv,
-                         tuneGrid = expand.grid(cp = cp_vec))
-
-# Plot grad_tune_rpart object
-plot(grad_tune_rpart)
-
-grad_tune_rpart$bestTune$cp
-
-plot(as.party(grad_tune_rpart$finalModel)) 
-
-
-
-# Random Forest -----------------------------------------------------------
-
-mtry_vec <- seq(1, 25, 1)
-
-
-# Random Forest 
-grad_tune_rf <- train(form = good_bad ~ .,
-                      data = data_train,
-                      method = "rf",
-                      trControl = ctrl_cv,
-                      tuneGrid = expand.grid(mtry = mtry_vec))
-
-plot(grad_tune_rf)
-
-grad_tune_rf$bestTune$mtry
-
-# Evaluation prediction performance of tuned models -----------------------
-
-glm_tune_pred <- predict(grad_tune_rf, newdata = data_test )
-
-rpart_tune_pred  <- predict(grad_tune_rpart, newdata = data_test )
-
-rf_tune_pred  <- predict(grad_tune_glm, newdata = data_test )
-
-# Regression
-postResample(pred = glm_tune_pred, obs = criterion_test)
-
-# Decision Trees
-postResample(pred = rpart_tune_pred, obs = criterion_test)
-
-# Random Forests
-postResample(pred = rf_tune_pred, obs = criterion_test)
-
-
-
-# modelmatrix -------------------------------------------------------------
-
-model.matrix(good_bad ~ . , data = data)
 
 
 ```
@@ -317,6 +211,10 @@ talks = data
 
 
 ```{r}
+
+#omit recent videos (since 2020/01/01)
+data = data %>% filter(upload_date <= "2020-01-01")
+
 #Take a look at the data
 data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
   geom_point() + 
@@ -336,19 +234,25 @@ cor(both_views$V1, both_views$V2)
   
 
 #compare good and bad data
+# 
+# good_data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
+#   geom_point() + 
+#   labs(x = "Upload Date", y = 'log(Views)') + 
+#   theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
+# 
+# bad_data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
+#   geom_point() + 
+#   labs(x = "Upload Date", y = 'log(Views)') + 
+#   theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
 
-good_data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
-  geom_point() + 
-  labs(x = "Upload Date", y = 'log(Views)') + 
-  theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
 
-bad_data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
-  geom_point() + 
-  labs(x = "Upload Date", y = 'log(Views)') + 
-  theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
 
 
 ```
+# The thing about the bad data after 2017
+
+It seems, that after 2017 there was a surge in uploads of new TED talks, which also were mainly unsuccesfull in terms of views. A lot of the "new" data even misses information about views. 
+Exluding TEDx talks and cutting of recent talks (since 2020) was a good method to "clean" the data. 
 
 
 # Emotional Arcs in TED Talks

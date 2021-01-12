@@ -73,7 +73,7 @@ data2 = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 # data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 # data$posemo
 
-str_replace_all(data$duration, "[:alpha:]" , "")
+# str_replace_all(data$duration, "[:alpha:]" , "")
 
 #change duration to usable format
 #omit letters
@@ -131,6 +131,7 @@ data = data %>% mutate(
 )
 data$good_bad = as.factor(data$good_bad)
 data = data %>% filter(!is.na(good_bad))
+data = na.omit(data)
 
 #filter
 # bad_data = data %>% filter(upload_date >= "2017-06-01" & log(views) < 13.5) 
@@ -143,20 +144,21 @@ train_index <- createDataPartition(data$good_bad, p = .8, list = FALSE)
 data_train <- data %>% select(id, presenter, event, upload_date, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(train_index)
 data_test  <- data %>% select(id, presenter, event, upload_date, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(-train_index)
 
-data = data %>% mutate(
-  id = as.factor(id),
-  presenter = as.factor(id),
-  tedx = as.factor(id)
-)
+data_train <- data_train %>% mutate_if(is.character, factor)
+data_test <- data_test %>% mutate_if(is.character, factor)
+
+
+# data_train <- model.matrix( ~ ., data_train)
+# data_test <- model.matrix( ~ ., data_test)
 
 # fitting -----------------------------------------------------------------
 
-
+# table(data$presenter)
 
 # Set training method to "none" for simple fitting
 ctrl_none <- trainControl(method = "none")
 
-grad_glm <- train(form = good_bad ~ .,
+grad_glm <- train(form = good_bad ~ id + event + duration + views + likes + dislike + tedx  ,
                   data = data_train,
                   method = "glm",
                   family = "binomial",
@@ -177,46 +179,6 @@ summary(glm_fit)
 hist(glm_fit)
 
 
-# Decision Trees ----------------------------------------------------------
-
-grad_rpart <- train(form = good_bad ~ .,
-                    data = data_train,
-                    method = "rpart",
-                    trControl = ctrl_none,
-                    tuneGrid = expand.grid(cp = 0.01))
-
-
-grad_rpart
-summary(grad_rpart$finalModel)
-plot(as.party(grad_rpart$finalModel))
-
-# Save fitted values of decision tree model
-rpart_fit <- predict(grad_rpart)
-
-# Explore decision tree fits
-rpart_fit
-summary(rpart_fit)
-hist(rpart_fit)
-
-
-
-# Random Forest -----------------------------------------------------------
-
-grad_rf <- train(form = good_bad ~ .,  
-                 data = data_train,
-                 method = "rf",
-                 trControl = ctrl_none,
-                 tuneGrid = expand.grid(mtry = 2))  
-
-
-# Save fitted values of random forest model
-rf_fit <- predict(grad_rf)
-
-rf_fit
-summary(rf_fit)
-hist(rf_fit)
-
-
 # evaluate fitting models -------------------------------------------------
 
 # Save training criterion values
@@ -224,13 +186,6 @@ criterion_train <- data_train$good_bad
 
 # Regression
 postResample(pred = glm_fit, obs = criterion_train)
-
-# Decision Trees
-postResample(pred = rpart_fit, obs = criterion_train)
-
-# Random Forests
-postResample(pred = rf_fit, obs = criterion_train)
-
 
 
 # Evaluate prediction perforamnce -----------------------------------------
@@ -241,21 +196,10 @@ criterion_test <- data_test$good_bad
 # Regression
 glm_pred <- predict(grad_glm, newdata = data_test )
 
-# Decision Trees
-rpart_pred <- predict(grad_rpart, newdata = data_test )
-
-# Random Forests
-rf_pred <- predict(grad_rf, newdata = data_test )
-
 
 # Regression
 postResample(pred = glm_pred, obs = criterion_test)
 
-# Decision Trees
-postResample(pred = rpart_pred, obs = criterion_test)
-
-# Random Forests
-postResample(pred = rf_pred, obs = criterion_test)
 
 
 # Tuning ------------------------------------------------------------------
@@ -276,13 +220,14 @@ lambda_vec <- seq(.000000001, .0003, length=100)
 
 
 # lasso regression
-grad_tune_glm <- train(form = good_bad ~ .-HispanicLatino -Position - State - Department - ManagerName,
+grad_tune_glm <- train(form = good_bad ~ .,
                        data = data_train,
                        method = "glmnet",
                        trControl = ctrl_cv,
                        preProcess = c("center", "scale"),  
                        tuneGrid = expand.grid(alpha = 1, 
-                                              lambda = lambda_vec))
+                                              lambda = lambda_vec),
+                       na.action = na.pass)
 
 plot(grad_tune_glm)
 

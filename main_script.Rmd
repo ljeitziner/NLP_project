@@ -133,7 +133,7 @@ data$good_bad = as.factor(data$good_bad)
 data$event = as.factor(data$event)
 # table(data$event)
 # data = data %>% filter(!is.na(good_bad))
-data = na.omit(data)
+# data = na.omit(data)
 
 
 #filter
@@ -141,7 +141,7 @@ bad_data = data %>% filter(upload_date >= "2017-06-01" & log(views) < 13.5)
 good_data = data %>% filter(!(upload_date >= "2017-06-01" & log(views) < 13.5))
 
 #omit recent videos (since 2020/01/01)
-data = data %>% filter(upload_date <= "2020-01-01")
+# data = data %>% filter(upload_date <= "2020-01-01")
 
 
 ### lasso analysis of what predicts good/bad data ###
@@ -196,29 +196,47 @@ coef(grad_tune_glm$finalModel,
 ```
 
 ```{r}
-#exclude NA talks
-# data = data %>% filter(!transcript=="N/A", .preserve = TRUE)
 
-#rename columns with strange names
-# data = data %>% rename(views=views_as_of_06162017)
+data = data %>% filter(!is.na(views))
 
-#Selecting all the talks that were filmed from 2000 to 2017
-# data <- data %>% filter( upload_date <= "2017-06-01")                           
-# data <- data %>% filter( upload_date >= "2017-06-01" & log(views) >= 12)         
+summary_by_event = data %>% group_by(event) %>% summarise(
+  mean_views = mean(views, na.rm = FALSE),
+  sd_views = sd(views, na.rm = FALSE)
+)
 
-#new subset
-# talks = data
+table(complete.cases(data$views))
+
+# unique(summary_by_event$event)
+
+summary_by_event = summary_by_event %>% arrange(mean_views)
+summary_by_event %>%  ggplot(aes(x = reorder(event, -mean_views), y = mean_views)) + 
+  geom_point()+
+  geom_point(aes(x = event, y = sd_views))
+
+data %>% ggplot(aes(x = reorder(event, -views), y = log(views))) + 
+  geom_boxplot()
+
+events_number = as.data.frame(table(data$event))
+colnames(events_number) = c("event","freq")
+summary_by_event = summary_by_event %>% left_join(events_number)
 
 ```
 
 
 ```{r}
+# data %>% filter(event=="TED-Ed") %>%  select(upload_date, views) %>% arrange(upload_date)  %>% ggplot(show.legend = FALSE,aes(x = upload_date, y = log(views))) +
+#   geom_point(show.legend = FALSE) + 
+#   labs(x = "Upload Date", y = 'log(Views)') + 
+#   theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
 
-
+data = data %>% mutate(
+  ted_ed = case_when(event=="TED-Ed" ~ 1,
+                     event!="TED-Ed" ~ 0
+))
 
 #Take a look at the data
-data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
-  geom_point() + 
+data %>% arrange(upload_date) %>% ggplot(show.legend = FALSE,aes(x = upload_date, y = log(views), color = event)) +
+  geom_point(show.legend = FALSE) + 
   labs(x = "Upload Date", y = 'log(Views)') + 
   theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
 

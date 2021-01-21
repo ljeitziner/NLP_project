@@ -89,6 +89,27 @@ data = data %>% mutate(
   duration = ms(data$duration)
 )
 
+#define time since upload
+data = data %>% mutate(
+  days_since_upload = difftime("2020-12-31", upload_date_youtube, units = "days")
+)
+
+
+#add likes/dislikes ratio
+data = data %>% mutate(
+  like_dislike_ratio = dislike/likes
+)
+```
+
+
+```{r}
+
+#wie sehen die Daten aus?
+# table(!is.na(data$id_youtube))
+# table(!is.na(data$views_youtube))
+
+
+
 ```
 
 
@@ -148,8 +169,8 @@ good_data = data %>% filter(!(upload_date >= "2017-06-01" & log(views) < 13.5))
 
 train_index <- createDataPartition(data$good_bad, p = .8, list = FALSE)
 # train and test sets
-data_train <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(train_index)
-data_test  <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad ) %>% slice(-train_index)
+data_train <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad, days_since_upload,like_dislike_ratio ) %>% slice(train_index)
+data_test  <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad, days_since_upload,like_dislike_ratio ) %>% slice(-train_index)
 
 data_train <- data_train %>% mutate_if(is.character, factor)
 data_test <- data_test %>% mutate_if(is.character, factor)
@@ -171,24 +192,24 @@ ctrl_cv <- trainControl(method = "cv", number = 10)
 # Vector of lambda values to try
 lambda_vec <- seq(.001, .0003, length=100)
 
+# 
+# # lasso regression
+# grad_tune_glm <- train(form = good_bad ~ .,
+#                        data = data_train,
+#                        method = "glmnet",
+#                        trControl = ctrl_cv,
+#                        preProcess = c("center", "scale"),  
+#                        tuneGrid = expand.grid(alpha = 1, 
+#                                               lambda = lambda_vec),
+#                        na.action = na.pass)
 
-# lasso regression
-grad_tune_glm <- train(form = good_bad ~ .,
-                       data = data_train,
-                       method = "glmnet",
-                       trControl = ctrl_cv,
-                       preProcess = c("center", "scale"),  
-                       tuneGrid = expand.grid(alpha = 1, 
-                                              lambda = lambda_vec),
-                       na.action = na.pass)
-
-
-predictions_lasso <- grad_tune_glm %>% predict(data_test)
-
-plot(grad_tune_glm)
-
-coef(grad_tune_glm$finalModel, 
-     grad_tune_glm$bestTune$lambda)
+# 
+# predictions_lasso <- grad_tune_glm %>% predict(data_test)
+# 
+# plot(grad_tune_glm)
+# 
+# coef(grad_tune_glm$finalModel, 
+#      grad_tune_glm$bestTune$lambda)
 
 
 
@@ -196,8 +217,8 @@ coef(grad_tune_glm$finalModel,
 ```
 
 ```{r}
-
-data = data %>% filter(!is.na(views))
+#alle nicht youtube entfernen
+data = data %>% filter(!is.na(views_youtube))
 
 summary_by_event = data %>% group_by(event) %>% summarise(
   mean_views = mean(views, na.rm = FALSE),
@@ -347,67 +368,13 @@ talks = data %>% left_join(posnegemo_wide, by = "id")
 
 # Let's look at the data: 
 
-Actually, there are 45 TED Talks that contain the word "story" in their title. Coincidence? We don't think so! Stories are everywhere, and the emotions conveyed in a story are the essence of a talk. 
-```{r}
-# storytelling <- talks %>% select("headline", "id") %>% 
-  # filter(str_detect(headline, "story"))
-```
-
-What are the 25 most popular/viewed talks? Ken Robinson's talk on "Do Schools Kill Creativity?" is the most popular talk of all time with impressive 45'622'906 views. There are 6 talks that have crossed the 20 million mark. 
-```{r}
-# summary(data$views)
-# 
-# top_10talks<- talks %>% select("id", "title", "presenter", "event_date", "duration", "views") %>% arrange(desc(talks$views)) %>% head(10)
-# 
-# tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
-# 
-# top <- ggplot(top_10talks, aes(title, views, fill= views)) +
-#   geom_col() +labs(title= "10 most viewed talks") + tilt_theme
-# 
-# top 
-```
-
-The least viewed talk "Plant fuels that could power a jet" has 138'915 views. 
-```{r}
-# last_10talks<- talks %>% select("id", "title", "presenter", "event_date", "duration", "views") %>% arrange((talks$views)) %>% head(10)
-# 
-# last<- ggplot(last_10talks, aes(title, views, fill= views)) +
-#   geom_col() +labs(title= "10 less viewed talks") + tilt_theme
-# last
-```
-
-# Does emotion matter? Emotions in TED Talks 
-Select the 30 most viewed and the 10 less viewed talks 
-```{r}
-# viewed_talks <- talks %>% arrange(desc(talks$views)) %>% head(10)
-# 
-# not_viewed_talks <- talks %>% arrange(talks$views) %>% head(10)
-```
-
-Positive Emotions (love, nice, sweet) --> The value of positive emotion of a talk is calculated as a percentage of all the words in that talk. For example, 4.2 % of all words in the talk were positive emotions.
-```{r}
-# posemo_toptalks<- ggplot(viewed_talks , aes(title, posemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with positive emotions",title="Positive Emotions - top talks")+ tilt_theme
-# posemo_toptalks
-# 
-# posemo_lowtalks <- ggplot(not_viewed_talks, aes(title, posemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with positive emotions",title="Positive Emotions - last talks")+ tilt_theme
-# posemo_lowtalks
-``` 
-
-Negative Emotions (hust, ugly, nasty)
-```{r}
-# negemo_toptalks<- ggplot(viewed_talks , aes(title, negemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with negative emotions",title="Negative Emotions - top talks")+ tilt_theme
-# negemo_toptalks
-# 
-# negemo_lowtalks <- ggplot(not_viewed_talks, aes(title, negemo, color=views))+ geom_point(alpha=0.6)+  labs(x="Headlines",y="% of words with negative emotions",title="Negative Emotions - last talks")+ tilt_theme
-# negemo_lowtalks
-``` 
-
 ```{r}
 #poisson regression analysis of talks
 
 #remove na talks
 talks = talks %>% filter(!is.na(affect), .preserve = TRUE)
-talks = talks %>% filter(!is.na(views), .preserve = TRUE)
+talks = talks %>% filter(!is.na(views_youtube), .preserve = TRUE)
+talks = talks %>% filter(!is.na(like_dislike_ratio), .preserve = TRUE)
 
 
 #Convert the variable "date_published" into an actual date 
@@ -421,47 +388,61 @@ talks %>% select(upload_date) %>%  arrange(desc(upload_date))
 # talks = talks %>% filter(upload_date > "2005-12-31" & upload_date < "2019-01-01")
 
 
-### analyses with log(views) or poisson ###
+### analyses with log(views_youtube) or poisson ###
 tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
 
 # normal (not log)
-affect_normal <- ggplot(talks, aes(affect, views)) +
-  geom_point() +labs(title= "Log(views) by % of affect words") + tilt_theme
+affect_normal <- ggplot(talks, aes(affect, views_youtube)) +
+  geom_point() +labs(title= "Log(views_youtube) by % of affect words") + tilt_theme
 
 affect_normal 
 
 
-# using log(views)
-affect <- ggplot(talks, aes(affect, log(views))) +
-  geom_point() +labs(title= "Log(views) by % of affect words") + tilt_theme +
-  labs(x = "% of affect words in a talk", y = "log(views)")
+# using log(views_youtube)
+affect <- ggplot(talks, aes(affect, log(views_youtube))) +
+  geom_point() +labs(title= "Log(views_youtube) by % of affect words") + tilt_theme +
+  labs(x = "% of affect words in a talk", y = "log(views_youtube)")
 
 affect 
 
 # positive emotion
-pos <- ggplot(talks, aes(posemo, log(views))) +
-  geom_point() +labs(title= "Log(views) by % of positive affect words") + tilt_theme
+pos <- ggplot(talks, aes(posemo, log(views_youtube))) +
+  geom_point() +labs(title= "Log(views_youtube) by % of positive affect words") + tilt_theme
 
 pos 
 
-talks %>% select(views, affect) %>% filter(!is.na(views))
+talks %>% select(views_youtube, affect) %>% filter(!is.na(views_youtube))
 
 # poisson regression
-poiss_aff <- glm(views ~ affect, family = "poisson", data = talks)
+poiss_aff <- glm(views_youtube ~ affect + days_since_upload, family = "poisson", data = talks)
 summary(poiss_aff)
+
+#without days since upload --> wow, the model fits way worse. thats really good!
+poiss_aff2 <- glm(views_youtube ~ affect, family = "poisson", data = talks)
+summary(poiss_aff2)
+
+
+#the chisq test shows the significance of days since upload as a predictor and even better fit! 
+anova(poiss_aff2, poiss_aff, test = "Chisq")
+
 
 prediction = predict(poiss_aff)
 
 # poisson regression of positive affect
-poiss_pos <- glm(views ~ posemo, family = "poisson", data = talks)
+poiss_pos <- glm(views_youtube ~ posemo + days_since_upload, family = "poisson", data = talks)
+poiss_pos2 <- glm(views_youtube ~ posemo, family = "poisson", data = talks)
+
 summary(poiss_pos)
 
-# add predicted log(views) to talks
+#the chisq test shows the significance of days since upload as a predictor and even better fit! 
+anova(poiss_pos2, poiss_pos, test = "Chisq")
+
+# add predicted log(views_youtube) to talks
 talks <- cbind(talks, pred_posemo = predict(poiss_pos))
 
 
 
-# add predicted log(views) to talks
+# add predicted log(views_youtube) to talks
 talks <-   cbind(talks, pred_affect = prediction)
 
 # nrow(talks)
@@ -469,19 +450,19 @@ talks <-   cbind(talks, pred_affect = prediction)
 
 
 # plot the points (actual observations), regression line
-plot_affect <- ggplot(talks, aes(affect,log(views))) + 
+plot_affect <- ggplot(talks, aes(affect,log(views_youtube))) + 
   geom_point() +
   geom_smooth(aes(affect, pred_affect)) +
-  labs(title= "Log(views) by % of affect words", x = "% of affect words in a talk", y = "log(views)")+
+  labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")+
   ylim(8,18)+xlim(0,0.2)
 
 plot_affect
 
 # posemo plot the points (actual observations), regression line
-plot_posemo <- ggplot(talks, aes(posemo, log(views))) + 
+plot_posemo <- ggplot(talks, aes(posemo, log(views_youtube))) + 
   geom_point() +
   geom_smooth(aes(posemo, pred_posemo)) +
-  labs(title= "Log(views) by % of positive affect words", x = "% of positive affect words in a talk", y = "log(views)")+
+  labs(title= "Log(views_youtube) by % of positive affect words", x = "% of positive affect words in a talk", y = "log(views_youtube)")+
   ylim(8,18)+xlim(0,0.2)
 
 plot_posemo
@@ -513,6 +494,57 @@ ggplot(data2, aes((affect),log(views_as_of_06162017))) +
   ylim(8,18)+xlim(0,0.2)
 
 
+
+
+###analyze models with sandwich for more robust standard errors
+
+# install.packages("sandwich")
+library(sandwich)
+
+
+cov.m1 <- vcovHC(poiss_aff, type="HC0")
+std.err <- sqrt(diag(cov.m1))
+r.est <- cbind(Estimate= coef(poiss_aff), "Robust SE" = std.err,
+"Pr(>|z|)" = 2 * pnorm(abs(coef(poiss_aff)/std.err), lower.tail=FALSE),
+LL = coef(poiss_aff) - 1.96 * std.err,
+UL = coef(poiss_aff) + 1.96 * std.err)
+
+r.est
+
+with(poiss_aff, cbind(res.deviance = deviance, df = df.residual,
+  p = pchisq(deviance, df.residual, lower.tail=FALSE)))
+
+
+
+### models with engagement
+
+
+# poisson regression of affect and engagement controlled for days_since_upload
+poiss_eng <- glm(views_youtube ~ affect + days_since_upload + like_dislike_ratio, family = "poisson", data = talks)
+poiss_eng2 <- glm(views_youtube ~ affect + days_since_upload, family = "poisson", data = talks)
+
+summary(poiss_eng)
+
+exp(coef(poiss_eng))
+
+range(talks$affect)
+
+#the chisq test shows the significance of days since upload as a predictor and even better fit! 
+anova(poiss_eng2, poiss_eng, test = "Chisq")
+
+# add predicted log(views_youtube) to talks
+talks <- cbind(talks, pred_eng = predict(poiss_eng))
+
+
+
+# plot the points (actual observations), regression line
+plot_eng <- ggplot(talks, aes(affect,log(views_youtube))) + 
+  geom_point() +
+  geom_smooth(aes(affect, pred_eng), method = "lm") +
+  labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")+
+  ylim(8,18)+xlim(0,0.2)
+
+plot_eng
 
 ```
 

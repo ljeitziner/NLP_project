@@ -413,7 +413,7 @@ pos
 talks %>% select(views_youtube, affect) %>% filter(!is.na(views_youtube))
 
 # poisson regression
-poiss_aff <- glm(views ~ affect + days_since_upload, family = "poisson", data = talks)
+poiss_aff <- glm(views_youtube ~ affect + days_since_upload, family = "poisson", data = talks)
 summary(poiss_aff)
 
 #without days since upload --> wow, the model fits way worse. thats really good!

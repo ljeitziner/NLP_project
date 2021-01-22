@@ -256,7 +256,7 @@ data = data %>% mutate(
 ))
 
 #Take a look at the data
-data %>% arrange(upload_date) %>% ggplot(show.legend = FALSE,aes(x = upload_date, y = log(views), color = event)) +
+data %>%  arrange(upload_date) %>% ggplot(show.legend = FALSE,aes(x = upload_date, y = log(views), color = event)) +
   geom_point(show.legend = FALSE) + 
   labs(x = "Upload Date", y = 'log(Views)') + 
   theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
@@ -376,7 +376,6 @@ talks = talks %>% filter(!is.na(affect), .preserve = TRUE)
 talks = talks %>% filter(!is.na(views_youtube), .preserve = TRUE)
 talks = talks %>% filter(!is.na(like_dislike_ratio), .preserve = TRUE)
 
-
 #Convert the variable "date_published" into an actual date 
 talks$upload_date <- as.Date(talks$upload_date, format = "%y/%m/%d")
 
@@ -414,7 +413,7 @@ pos
 talks %>% select(views_youtube, affect) %>% filter(!is.na(views_youtube))
 
 # poisson regression
-poiss_aff <- glm(views_youtube ~ affect + days_since_upload, family = "poisson", data = talks)
+poiss_aff <- glm(views ~ affect + days_since_upload, family = "poisson", data = talks)
 summary(poiss_aff)
 
 #without days since upload --> wow, the model fits way worse. thats really good!
@@ -520,7 +519,7 @@ with(poiss_aff, cbind(res.deviance = deviance, df = df.residual,
 
 
 # poisson regression of affect and engagement controlled for days_since_upload
-poiss_eng <- glm(views_youtube ~ affect + days_since_upload + like_dislike_ratio, family = "poisson", data = talks)
+poiss_eng <- glm(views ~ affect + days_since_upload + like_dislike_ratio, family = "poisson", data = talks)
 poiss_eng2 <- glm(views_youtube ~ affect + days_since_upload, family = "poisson", data = talks)
 
 summary(poiss_eng)

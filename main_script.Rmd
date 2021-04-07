@@ -31,6 +31,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(dplyr)
 library(tidytext)
+# citation("tidytext")
 library(dplyr)
 library(stringr)
 library(stopwords)
@@ -255,6 +256,12 @@ data = data %>% mutate(
                      event!="TED-Ed" ~ 0
 ))
 
+
+#exclude ted ed data
+data = data %>% filter(ted_ed == 0)
+
+# data %>% arrange(upload_date)
+
 #Take a look at the data
 data %>%  arrange(upload_date) %>% ggplot(show.legend = FALSE,aes(x = upload_date, y = log(views), color = event)) +
   geom_point(show.legend = FALSE) + 
@@ -312,10 +319,11 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
   pos = 1:n(),
   rel_pos = (pos-1)/max(pos-1)
 )
+# citation(tidytext)
 
 #load the sentiment word from the "afinn" repository
 afinn = get_sentiments("afinn")
-
+# citation("afinn")
 #join the tokens with the sentiment words
 token_tbl <- inner_join(y = afinn,x = token_tbl)
 

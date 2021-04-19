@@ -68,8 +68,8 @@ options(scipen=999)
 ```{r, message = F, warning=F}
 #load data  
 
-data = read_csv("data/TED_dirk.csv", locale = locale(encoding = "UTF-8"))
-data2 = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
+data = read_csv("../01_Data/TED_dirk.csv", locale = locale(encoding = "UTF-8"))
+# data2 = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 
 # data = read_csv("data/ted.csv", locale = locale(encoding = "UTF-8"))
 # data$posemo
@@ -102,12 +102,120 @@ data = data %>% mutate(
 )
 ```
 
+# Tags analysis
+
 
 ```{r}
+#create tokens from tags
+tags_tbl = unnest_tokens(data, input = "tags", token = "words", to_lower = TRUE, output = "word")
 
-#wie sehen die Daten aus?
-# table(!is.na(data$id_youtube))
-# table(!is.na(data$views_youtube))
+
+#extract unique tags
+unique(tags_tbl$word)
+
+#create wordlist for adjencency matrix
+wordlist = as.vector(unique(tags_tbl$word))
+
+#see number of mentions
+as.list(sort(table(tags_tbl$word),decreasing = TRUE))
+
+
+
+
+#add numeration to tags_tbl
+tags_tbl = tags_tbl %>% group_by(id) %>% mutate(n = row_number())
+
+
+tags = tags_tbl %>% select(id, n, word)
+
+
+
+#create empty adjecency matrix
+adj = matrix(0, nrow = length(wordlist), ncol = length(wordlist), dimnames = list(wordlist))
+
+#name columns and rows
+colnames(adj) =  wordlist
+rownames(adj) = wordlist
+
+for (i in 1:length(unique(tags_tbl$id))){
+    list = tags[(tags$id==i),3]
+    list = as.vector(list$word)
+    k = NULL
+    if (length(list)>1){
+      for (k in 1:length(list)){
+        n = length(list)
+        l = m = NULL
+        for (l in 1:(n-1)){
+          for (m in (l+1):n){
+           
+            adj[list[l], list[m]] = adj[list[l], list[m]] + 1
+            adj[list[m], list[l]] = adj[list[m], list[l]] + 1
+            
+           }
+        }
+     }
+  }
+}
+
+
+
+# install.packages('netdiffuseR')
+library(netdiffuseR)
+
+# w <- abs(rnorm(nrow(edge_list)))
+
+# adj_matrix = edgelist_to_adjmat(edge_list[,1:2], undirected = TRUE, multiple = TRUE)
+
+# adj = get.adjacency(graph, sparse = FALSE)
+
+# adj = as_adjacency_matrix(graph, sparse=FALSE, edges = TRUE)
+
+```
+
+
+```{r}
+#make graphs
+
+
+
+library(ggraph)
+
+library(igraph)
+
+library(qgraph)
+# install.packages('qgraph')
+
+# graph_list = as.matrix(edge_list)
+
+graph = graph_from_adjacency_matrix(adj, mode = "undirected", weighted = TRUE)
+
+
+# graph<- igraph::graph.adjacency(adj, mode = "undirected")
+
+
+ggraph(graph, layout = "auto")+geom_edge_link()+geom_node_label(aes(label =V(graph)$name),label.size =unit(0.1, "lines"),label.padding =unit(.1, "lines"),size = 1.5)+theme_graph(base_family = "Roboto Condensed")
+
+# qgraph(adj, vsize=c(5,10), directed=FALSE, layout='spring', vTrans=50)
+
+
+#number of possible cluster numbers
+kseq=c(2:75)
+
+#find out number of clusters with cstab
+distance = cDistance(adj, kseq, method = "hierarchical", linkage = "ward.D",
+kmIter = 10, gapIter = 10)
+
+plot(distance$Jumps)
+plot(distance$Gaps)
+plot(distance$Slopes)
+
+
+
+# cluster analysis with fast k mediod method -> 10 clusters
+cluster_analysis <- fastkmed(adj, ncluster = 50, iterate = 5000)
+cluster_analysis$cluster
+# cluster_analysis <- fastkmed(dist_data, ncluster = 8, iterate = 5000)
+
 
 
 
@@ -119,100 +227,105 @@ data = data %>% mutate(
 
 ```{r}
 
+###### NOTE #######
+# This code was written to run a lasso algorithm to see, which variables predict the good/bad classifier best.
+# Since the solution was to omit non-youtube videos and ted-ed videos, this code has lost its purpose 
+
+
 #here we try to clean the data from the 2017 problematic
-
-
-### TOP-Down approach ###
-
-#omit all independent ted talks
-# unique(data$event)
-
-#mark all TEDx events
-data = data %>% mutate(
-  tedx = case_when(
-    #identify TEDx events
-    str_detect(data$event, "TEDx") ~ "TEDx",
-    !str_detect(data$event, "TEDx") ~ "TED"
-  )
-)
-
-# unique(data$tedx)
-data$tedx = as.factor(data$tedx)
-#filter out all TEDx events
-# data = data %>% filter(tedx == "TED")
-
-
-
-### Bottom up Analysis ###
-#define bad data and good data
-data = data %>% mutate(
-  good_bad = case_when(
-    (upload_date >= "2017-06-01" & log(views) < 13.5) ~ 1,
-    !(upload_date >= "2017-06-01" & log(views) < 13.5)  ~ 0
-    ) 
-)
-data$good_bad = as.factor(data$good_bad)
-data$event = as.factor(data$event)
-# table(data$event)
-# data = data %>% filter(!is.na(good_bad))
-# data = na.omit(data)
-
-
-#filter
-bad_data = data %>% filter(upload_date >= "2017-06-01" & log(views) < 13.5)
-good_data = data %>% filter(!(upload_date >= "2017-06-01" & log(views) < 13.5))
-
-#omit recent videos (since 2020/01/01)
-# data = data %>% filter(upload_date <= "2020-01-01")
-
-
-### lasso analysis of what predicts good/bad data ###
-
-train_index <- createDataPartition(data$good_bad, p = .8, list = FALSE)
-# train and test sets
-data_train <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad, days_since_upload,like_dislike_ratio ) %>% slice(train_index)
-data_test  <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad, days_since_upload,like_dislike_ratio ) %>% slice(-train_index)
-
-data_train <- data_train %>% mutate_if(is.character, factor)
-data_test <- data_test %>% mutate_if(is.character, factor)
-
-
-# Tuning ------------------------------------------------------------------
-
-# install.packages("glmnet")
-
-# Set training method to "none" for simple fitting
-ctrl_cv <- trainControl(method = "cv", number = 10)
-
-
-
-# Lasso -------------------------------------------------------------------
-
-
-
-# Vector of lambda values to try
-lambda_vec <- seq(.001, .0003, length=100)
-
 # 
-# # lasso regression
-# grad_tune_glm <- train(form = good_bad ~ .,
-#                        data = data_train,
-#                        method = "glmnet",
-#                        trControl = ctrl_cv,
-#                        preProcess = c("center", "scale"),  
-#                        tuneGrid = expand.grid(alpha = 1, 
-#                                               lambda = lambda_vec),
-#                        na.action = na.pass)
-
 # 
-# predictions_lasso <- grad_tune_glm %>% predict(data_test)
+# ### TOP-Down approach ###
 # 
-# plot(grad_tune_glm)
+# #omit all independent ted talks
+# # unique(data$event)
 # 
-# coef(grad_tune_glm$finalModel, 
-#      grad_tune_glm$bestTune$lambda)
-
-
+# #mark all TEDx events
+# data = data %>% mutate(
+#   tedx = case_when(
+#     #identify TEDx events
+#     str_detect(data$event, "TEDx") ~ "TEDx",
+#     !str_detect(data$event, "TEDx") ~ "TED"
+#   )
+# )
+# 
+# # unique(data$tedx)
+# data$tedx = as.factor(data$tedx)
+# #filter out all TEDx events
+# # data = data %>% filter(tedx == "TED")
+# 
+# 
+# 
+# ### Bottom up Analysis ###
+# #define bad data and good data
+# data = data %>% mutate(
+#   good_bad = case_when(
+#     (upload_date >= "2017-06-01" & log(views) < 13.5) ~ 1,
+#     !(upload_date >= "2017-06-01" & log(views) < 13.5)  ~ 0
+#     ) 
+# )
+# data$good_bad = as.factor(data$good_bad)
+# data$event = as.factor(data$event)
+# # table(data$event)
+# # data = data %>% filter(!is.na(good_bad))
+# # data = na.omit(data)
+# 
+# 
+# #filter
+# bad_data = data %>% filter(upload_date >= "2017-06-01" & log(views) < 13.5)
+# good_data = data %>% filter(!(upload_date >= "2017-06-01" & log(views) < 13.5))
+# 
+# #omit recent videos (since 2020/01/01)
+# # data = data %>% filter(upload_date <= "2020-01-01")
+# 
+# 
+# ### lasso analysis of what predicts good/bad data ###
+# 
+# train_index <- createDataPartition(data$good_bad, p = .8, list = FALSE)
+# # train and test sets
+# data_train <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad, days_since_upload,like_dislike_ratio ) %>% slice(train_index)
+# data_test  <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad, days_since_upload,like_dislike_ratio ) %>% slice(-train_index)
+# 
+# data_train <- data_train %>% mutate_if(is.character, factor)
+# data_test <- data_test %>% mutate_if(is.character, factor)
+# 
+# 
+# # Tuning ------------------------------------------------------------------
+# 
+# # install.packages("glmnet")
+# 
+# # Set training method to "none" for simple fitting
+# ctrl_cv <- trainControl(method = "cv", number = 10)
+# 
+# 
+# 
+# # Lasso -------------------------------------------------------------------
+# 
+# 
+# 
+# # Vector of lambda values to try
+# lambda_vec <- seq(.001, .0003, length=100)
+# 
+# # 
+# # # lasso regression
+# # grad_tune_glm <- train(form = good_bad ~ .,
+# #                        data = data_train,
+# #                        method = "glmnet",
+# #                        trControl = ctrl_cv,
+# #                        preProcess = c("center", "scale"),  
+# #                        tuneGrid = expand.grid(alpha = 1, 
+# #                                               lambda = lambda_vec),
+# #                        na.action = na.pass)
+# 
+# # 
+# # predictions_lasso <- grad_tune_glm %>% predict(data_test)
+# # 
+# # plot(grad_tune_glm)
+# # 
+# # coef(grad_tune_glm$finalModel, 
+# #      grad_tune_glm$bestTune$lambda)
+# 
+# 
 
 
 ```
@@ -308,11 +421,16 @@ We are interested in discovering if there are distinct emotional arcs and if the
 
 Tokenize the data and add sentiment
 ```{r, message = F, warning=F}
-
 #tokenize the transcripts 
 # data$transcript
 token_tbl = unnest_tokens(data, input = "transcript", token = "words", to_lower = TRUE, output = "word")
+sentence_table = unnest_tokens(data, input = "transcript", token = "sentences", to_lower = TRUE, output = "sentence")
+```
 
+
+
+# Frequency of affect words
+```{r, message = F, warning=F}
 #relative position of the word for the sentiment analysis -> arc, also add wordcount for LIWC analysis
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   word_count = n(),
@@ -359,11 +477,22 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
   posemo = max(posemo)
 )
 
+#add intensity, abs intensity and valence
+token_tbl = token_tbl %>% group_by(id) %>% mutate(
+  mean_intensity = mean(value),
+  abs_mean_intensity = abs(mean_intensity),
+  valence = case_when(
+    mean_intensity > 0 ~ "positive",
+    mean_intensity < 0 ~ "negative"
+  )
+)
+
+
 # token_tbl %>% select(word, word_count, pos, rel_pos, value, posemo, negemo, affect )
 
 
 #add posemo and negemo back to the wide data set
-posnegemo_wide = aggregate(id ~ posemo + negemo + affect, mean, data = token_tbl)
+posnegemo_wide = aggregate(id ~ posemo + negemo + affect + mean_intensity + abs_mean_intensity + valence, mean, data = token_tbl)
 talks = data %>% left_join(posnegemo_wide, by = "id")
 
 #see if it worked
@@ -371,8 +500,21 @@ talks = data %>% left_join(posnegemo_wide, by = "id")
 
 # talks$affect
 
+
+#see correlation of independent variables
+cor_table = talks %>% select(affect, posemo, negemo, mean_intensity, abs_mean_intensity) %>% cor()
+
+```
+# Tags analysis
+
+```{r}
+
+
+
 ```
 
+
+# SentiWords with other dimensions
 
 # Let's look at the data: 
 
@@ -418,7 +560,7 @@ pos <- ggplot(talks, aes(posemo, log(views_youtube))) +
 
 pos 
 
-talks %>% select(views_youtube, affect) %>% filter(!is.na(views_youtube))
+# talks %>% select(views_youtube, affect) %>% filter(!is.na(views_youtube))
 
 # poisson regression
 poiss_aff <- glm(views_youtube ~ affect + days_since_upload, family = "poisson", data = talks)
@@ -476,82 +618,6 @@ plot_posemo
 
 
 
-
-
-
-#vergleich des alten datensatzes
-
-#scale affect to the same level as the new dataset
-data2$affect = data2$affect /100
-
-#run regression
-poiss_aff2 = glm(views_as_of_06162017 ~ affect, data = data2, family = "poisson")
-summary(poiss_aff2)
-
-# length(data2$affect)
-
-#filer out NA's
-data2 = data2 %>% filter(!is.na(affect))
-
-#Plot scatterplot between affect and log(views)
-ggplot(data2, aes((affect),log(views_as_of_06162017))) + 
-  geom_point() +
-  geom_smooth(aes(affect, predict(poiss_aff2))) +
-  labs(title= "Log(views) by % of affect words", x = "% of affect words in a talk", y = "log(views)")+ 
-  ylim(8,18)+xlim(0,0.2)
-
-
-
-
-###analyze models with sandwich for more robust standard errors
-
-# install.packages("sandwich")
-library(sandwich)
-
-
-cov.m1 <- vcovHC(poiss_aff, type="HC0")
-std.err <- sqrt(diag(cov.m1))
-r.est <- cbind(Estimate= coef(poiss_aff), "Robust SE" = std.err,
-"Pr(>|z|)" = 2 * pnorm(abs(coef(poiss_aff)/std.err), lower.tail=FALSE),
-LL = coef(poiss_aff) - 1.96 * std.err,
-UL = coef(poiss_aff) + 1.96 * std.err)
-
-r.est
-
-with(poiss_aff, cbind(res.deviance = deviance, df = df.residual,
-  p = pchisq(deviance, df.residual, lower.tail=FALSE)))
-
-
-
-### models with engagement
-
-
-# poisson regression of affect and engagement controlled for days_since_upload
-poiss_eng <- glm(views ~ affect + days_since_upload + like_dislike_ratio, family = "poisson", data = talks)
-poiss_eng2 <- glm(views_youtube ~ affect + days_since_upload, family = "poisson", data = talks)
-
-summary(poiss_eng)
-
-exp(coef(poiss_eng))
-
-range(talks$affect)
-
-#the chisq test shows the significance of days since upload as a predictor and even better fit! 
-anova(poiss_eng2, poiss_eng, test = "Chisq")
-
-# add predicted log(views_youtube) to talks
-talks <- cbind(talks, pred_eng = predict(poiss_eng))
-
-
-
-# plot the points (actual observations), regression line
-plot_eng <- ggplot(talks, aes(affect,log(views_youtube))) + 
-  geom_point() +
-  geom_smooth(aes(affect, pred_eng), method = "lm") +
-  labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")+
-  ylim(8,18)+xlim(0,0.2)
-
-plot_eng
 
 ```
 

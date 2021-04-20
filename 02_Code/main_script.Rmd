@@ -109,6 +109,8 @@ data = data %>% mutate(
 #create tokens from tags
 tags_tbl = unnest_tokens(data, input = "tags", token = "words", to_lower = TRUE, output = "word")
 
+#remove NA
+tags_tbl = tags_tbl %>% filter(!is.na(word))
 
 #extract unique tags
 unique(tags_tbl$word)
@@ -193,33 +195,159 @@ graph = graph_from_adjacency_matrix(adj, mode = "undirected", weighted = TRUE)
 # graph<- igraph::graph.adjacency(adj, mode = "undirected")
 
 
-ggraph(graph, layout = "auto")+geom_edge_link()+geom_node_label(aes(label =V(graph)$name),label.size =unit(0.1, "lines"),label.padding =unit(.1, "lines"),size = 1.5)+theme_graph(base_family = "Roboto Condensed")
-
-# qgraph(adj, vsize=c(5,10), directed=FALSE, layout='spring', vTrans=50)
+```
 
 
-#number of possible cluster numbers
-kseq=c(2:75)
+```{r}
 
-#find out number of clusters with cstab
-distance = cDistance(adj, kseq, method = "hierarchical", linkage = "ward.D",
-kmIter = 10, gapIter = 10)
+# run louvain with edge weights 
+louvain_partition <- igraph::cluster_louvain(graph, weights = E(graph)$weight) 
+# assign communities to graph 
+graph$community <- louvain_partition$membership 
 
-plot(distance$Jumps)
-plot(distance$Gaps)
-plot(distance$Slopes)
+table(louvain_partition$membership)
+
+# see how many communities there are 
+unique(graph$community) 
 
 
 
-# cluster analysis with fast k mediod method -> 10 clusters
-cluster_analysis <- fastkmed(adj, ncluster = 50, iterate = 5000)
-cluster_analysis$cluster
-# cluster_analysis <- fastkmed(dist_data, ncluster = 8, iterate = 5000)
 
+communities <- data.frame() 
+for (i in unique(graph$community)) { 
+# create subgraphs for each community 
+  subgraph <- induced_subgraph(graph, v = which(graph$community == i)) 
+# get size of each subgraph 
+size <- igraph::gorder(subgraph) 
+# get betweenness centrality 
+btwn <- igraph::betweenness(subgraph) 
+communities <- communities %>% 
+  dplyr::bind_rows(data.frame(
+    community = i, 
+    n_tags = size, 
+    most_important = names(which(btwn == max(btwn))) 
+    ) 
+  ) 
+} 
+knitr::kable(
+  communities %>% 
+    dplyr::select(community, n_tags, most_important)
+)
+
+
+top_five <- data.frame() 
+for (i in unique(graph$community)) { 
+  # create subgraphs for each community 
+  subgraph <- induced_subgraph(graph, v =       which(graph$community == i)) 
+  # for larger communities 
+  if (igraph::gorder(subgraph) > 1) { 
+    # get degree 
+    degree <- igraph::degree(subgraph) 
+    # get top five degrees 
+    top <- names(head(sort(degree, decreasing = TRUE), 5)) 
+    result <- data.frame(community = i, rank = 1:5, character = top) 
+  } else { 
+    result <- data.frame(community = NULL, rank = NULL, character = NULL) 
+  } 
+  top_five <- top_five %>% 
+    dplyr::bind_rows(result) 
+} 
+knitr::kable(
+top_five %>% 
+  tidyr::pivot_wider(names_from = rank, values_from = character) 
+)
 
 
 
 ```
+
+
+```{r}
+main_tags = c("environment","society","science","entertainment","technology")
+
+# give our nodes some properties, incl scaling them by degree and coloring them by community 
+V(graph)$size <- 1
+V(graph)$frame.color <- "white" 
+V(graph)$color <- graph$community 
+V(graph)$label <- V(graph)$name 
+V(graph)$label.cex <- 1
+
+
+# also color edges according to their starting node 
+edge.start <- ends(graph, es = E(graph), names = F)[,1] 
+E(graph)$color <- V(graph)$color[edge.start] 
+E(graph)$arrow.mode <- 0 
+
+v_labels <- which(V(graph)$name %in% main_tags) 
+for (i in 1:length(V(graph))) { 
+  if (!(i %in% v_labels)) { V(graph)$label[i] <- "" } 
+}
+
+
+l1 <- layout_on_sphere(graph)
+plot(graph, rescale = T, layout = l1, main = "'Tags Communities of TED Talks")
+
+
+l2 <- layout_with_mds(graph) 
+plot(graph, rescale = T, layout = l2, main = "Tags Communities of TED Talks")
+```
+
+
+```{r}
+main_tags
+
+
+# main_tags = c("environment","society","science","entertainment","technology")
+
+#write communities back into tbl
+tags_communities = as.data.frame(cbind(graph$community , wordlist)) %>% rename(word = wordlist)
+
+tags = tags %>% inner_join(tags_communities) 
+tags = tags %>% rename(community = V1)
+
+#which tag is the most often used per talk
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+tags = tags %>% group_by(id) %>% mutate(
+  community = as.numeric(community),
+  main_tag = Mode(community),
+  community_chr = case_when(
+    main_tag == 1 ~ "environment",
+    main_tag == 2 ~ "society",
+    main_tag == 4 ~ "entertainment",
+    main_tag == 3 ~ "science",
+    main_tag == 5 ~ "technology"
+  )
+)
+
+table(tags$main_tag)
+
+
+
+#back to data
+id_community = tags %>% group_by(id) %>% summarise(
+  community = mean(main_tag)
+)
+
+data = data %>% inner_join(id_community)
+data = data %>% mutate(
+  community_chr = case_when(
+    community == 1 ~ "environment",
+    community == 2 ~ "society",
+    community == 4 ~ "entertainment",
+    community == 3 ~ "science",
+    community == 5 ~ "technology"
+  )
+)
+
+
+```
+
+
+
 
 
 # Data cleaning
@@ -510,6 +638,16 @@ cor_table = talks %>% select(affect, posemo, negemo, mean_intensity, abs_mean_in
 ```{r}
 
 
+talks$community_chr = as.factor(talks$community_chr)
+table(talks$community_chr)
+
+data %>%  ggplot(aes(x = community_chr)) + geom_bar()
+
+# data %>%  ggplot(aes(x = community_chr, y = views_youtube)) + geom_boxplot()
+
+
+model_tags <- glm(views_youtube ~ affect + community + days_since_upload, family = "poisson", data = talks)
+summary(model_tags)
 
 ```
 

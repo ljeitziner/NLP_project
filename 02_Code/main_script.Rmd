@@ -102,6 +102,8 @@ data = data %>% mutate(
 )
 ```
 
+
+
 # Tags analysis
 
 
@@ -294,8 +296,6 @@ plot(graph, rescale = T, layout = l2, main = "Tags Communities of TED Talks")
 
 
 ```{r}
-main_tags
-
 
 # main_tags = c("environment","society","science","entertainment","technology")
 
@@ -459,6 +459,7 @@ data = data %>% mutate(
 ```
 
 ```{r}
+
 #alle nicht youtube entfernen
 data = data %>% filter(!is.na(views_youtube))
 
@@ -487,10 +488,6 @@ summary_by_event = summary_by_event %>% left_join(events_number)
 
 
 ```{r}
-# data %>% filter(event=="TED-Ed") %>%  select(upload_date, views) %>% arrange(upload_date)  %>% ggplot(show.legend = FALSE,aes(x = upload_date, y = log(views))) +
-#   geom_point(show.legend = FALSE) + 
-#   labs(x = "Upload Date", y = 'log(Views)') + 
-#   theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
 
 data = data %>% mutate(
   ted_ed = case_when(event=="TED-Ed" ~ 1,
@@ -521,22 +518,8 @@ both_views = na.omit(both_views)
 cor(both_views$V1, both_views$V2)
   
 
-#compare good and bad data
-# 
-# good_data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
-#   geom_point() + 
-#   labs(x = "Upload Date", y = 'log(Views)') + 
-#   theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
-# 
-# bad_data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(x = upload_date, y = log(views))) +
-#   geom_point() + 
-#   labs(x = "Upload Date", y = 'log(Views)') + 
-#   theme_minimal()+ scale_x_continuous(breaks = as.Date(c("2010-01-01", "2012-01-01", "2014-01-01", "2016-01-01", "2018-01-01","2020-01-01" )))
-
-
-
-
 ```
+
 # The thing about the bad data after 2017
 
 It seems, that after 2017 there was a surge in uploads of new TED talks, which also were mainly unsuccesfull in terms of views. A lot of the "new" data even misses information about views. 
@@ -548,11 +531,30 @@ Exluding TEDx talks and cutting of recent talks (since 2020) was a good method t
 We are interested in discovering if there are distinct emotional arcs and if they can predict the number of views a TED Talk will have. To plot the sentiment arcs first we have to tokenize the transcripts of the talks and add the sentiment values. 
 
 Tokenize the data and add sentiment
+
 ```{r, message = F, warning=F}
 #tokenize the transcripts 
 # data$transcript
 token_tbl = unnest_tokens(data, input = "transcript", token = "words", to_lower = TRUE, output = "word")
-sentence_table = unnest_tokens(data, input = "transcript", token = "sentences", to_lower = TRUE, output = "sentence")
+# sentence_table = unnest_tokens(data, input = "transcript", token = "sentences", to_lower = TRUE, output = "sentence")
+
+
+#senti Words
+# sentiwords = read_csv("../01_Data/SentiWords_1.1.txt", locale = locale(encoding = "UTF-8"))
+  
+
+#vader -->  vader geht zu lange!!! Für 10 ted talks 2.5 min (extrapoliert auf 3000~talks -> 750 min)
+# install.packages("vader")
+# library(vader)
+# vader_tbl = vader_df(data$transcript[1:10])
+# get_vader(beispiel)
+
+
+#sentiwordnet
+# install.packages("lexicon")
+library(lexicon)
+sentiwords = hash_sentiment_sentiword
+sentiwords = sentiwords %>% rename(value = y, word = x)
 ```
 
 
@@ -569,9 +571,11 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
 
 #load the sentiment word from the "afinn" repository
 afinn = get_sentiments("afinn")
+
+
 # citation("afinn")
 #join the tokens with the sentiment words
-token_tbl <- inner_join(y = afinn,x = token_tbl)
+token_tbl <- inner_join(y = sentiwords,x = token_tbl)
 
 # token_tbl = token_tbl %>% group_by(id) %>% mutate(
 #   pos = 1:n(),
@@ -626,8 +630,8 @@ talks = data %>% left_join(posnegemo_wide, by = "id")
 #see if it worked
 # talks %>% select(id,affect,  posemo, negemo, views)
 
-# talks$affect
-
+#remove NA's
+talks = talks %>% filter(!is.na(mean_intensity))
 
 #see correlation of independent variables
 cor_table = talks %>% select(affect, posemo, negemo, mean_intensity, abs_mean_intensity) %>% cor()
@@ -657,7 +661,7 @@ summary(model_tags)
 # Let's look at the data: 
 
 ```{r}
-#poisson regression analysis of talks
+#poisson regression analysis of talks with frequency measure
 
 #remove na talks
 talks = talks %>% filter(!is.na(affect), .preserve = TRUE)
@@ -712,8 +716,10 @@ summary(poiss_aff2)
 #the chisq test shows the significance of days since upload as a predictor and even better fit! 
 anova(poiss_aff2, poiss_aff, test = "Chisq")
 
-
+# add predicted log(views_youtube) to talks
 prediction = predict(poiss_aff)
+talks <-   cbind(talks, pred_affect = prediction)
+
 
 # poisson regression of positive affect
 poiss_pos <- glm(views_youtube ~ posemo + days_since_upload, family = "poisson", data = talks)
@@ -729,19 +735,11 @@ talks <- cbind(talks, pred_posemo = predict(poiss_pos))
 
 
 
-# add predicted log(views_youtube) to talks
-talks <-   cbind(talks, pred_affect = prediction)
-
-# nrow(talks)
-
-
-
 # plot the points (actual observations), regression line
 plot_affect <- ggplot(talks, aes(affect,log(views_youtube))) + 
   geom_point() +
   geom_smooth(aes(affect, pred_affect)) +
-  labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")+
-  ylim(8,18)+xlim(0,0.2)
+  labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")
 
 plot_affect
 
@@ -749,18 +747,42 @@ plot_affect
 plot_posemo <- ggplot(talks, aes(posemo, log(views_youtube))) + 
   geom_point() +
   geom_smooth(aes(posemo, pred_posemo)) +
-  labs(title= "Log(views_youtube) by % of positive affect words", x = "% of positive affect words in a talk", y = "log(views_youtube)")+
-  ylim(8,18)+xlim(0,0.2)
+  labs(title= "Log(views_youtube) by % of positive affect words", x = "% of positive affect words in a talk", y = "log(views_youtube)")
 
 plot_posemo
 
 
 
+###### OTHER MEASURES #######
 
+# poisson regression
+poiss_aff <- glm(views_youtube ~ affect + mean_intensity + abs_mean_intensity + days_since_upload, family = "poisson", data = talks)
+summary(poiss_aff)
+
+#without days since upload --> wow, the model fits way worse. thats really good!
+poiss_aff2 <- glm(views_youtube ~ affect, family = "poisson", data = talks)
+summary(poiss_aff2)
+
+
+#the chisq test shows the significance of days since upload as a predictor and even better fit! 
+anova(poiss_aff2, poiss_aff, test = "Chisq")
+
+# add predicted log(views_youtube) to talks
+prediction = predict(poiss_aff)
+talks <-   cbind(talks, pred_affect2 = prediction)
+
+# plot the points (actual observations), regression line
+plot_affect2 <- ggplot(talks, aes(affect,log(views_youtube))) + 
+  geom_point() +
+  geom_smooth(aes(affect, pred_affect2)) +
+  labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")
+
+plot_affect2
 ```
 
 
 Smooth sentiment arcs
+
 ```{r}
 # smoothing function for smoothing the sentiment values relative to the position
 smooth = function(pos, value){ 

@@ -323,7 +323,7 @@ tags = tags %>% group_by(id) %>% mutate(
   )
 )
 
-table(tags$main_tag)
+# table(tags$main_tag)
 
 
 

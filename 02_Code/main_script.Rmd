@@ -634,7 +634,11 @@ talks = data %>% left_join(posnegemo_wide, by = "id")
 talks = talks %>% filter(!is.na(mean_intensity))
 
 #see correlation of independent variables
-cor_table = talks %>% select(affect, posemo, negemo, mean_intensity, abs_mean_intensity) %>% cor()
+cor_table = talks %>% select(affect, posemo, negemo, mean_intensity, abs_mean_intensity) %>% mutate(
+  dif = posemo - negemo
+) %>% cor()
+
+# talks %>% ggplot(aes(x = abs_mean_intensity, y = mean_intensity)) + geom_point()
 
 ```
 # Tags analysis
@@ -652,6 +656,10 @@ data %>%  ggplot(aes(x = community_chr)) + geom_bar()
 
 model_tags <- glm(views_youtube ~ affect + community + days_since_upload, family = "poisson", data = talks)
 summary(model_tags)
+
+
+talks %>% filter(presenter == "Al Gore") %>% select(tags, community)
+
 
 ```
 

@@ -104,251 +104,6 @@ data = data %>% mutate(
 
 
 
-# Tags analysis
-
-
-```{r}
-#create tokens from tags
-tags_tbl = unnest_tokens(data, input = "tags", token = "words", to_lower = TRUE, output = "word")
-
-#remove NA
-tags_tbl = tags_tbl %>% filter(!is.na(word))
-
-#extract unique tags
-unique(tags_tbl$word)
-
-#create wordlist for adjencency matrix
-wordlist = as.vector(unique(tags_tbl$word))
-
-#see number of mentions
-as.list(sort(table(tags_tbl$word),decreasing = TRUE))
-
-
-
-
-#add numeration to tags_tbl
-tags_tbl = tags_tbl %>% group_by(id) %>% mutate(n = row_number())
-
-
-tags = tags_tbl %>% select(id, n, word)
-
-
-
-#create empty adjecency matrix
-adj = matrix(0, nrow = length(wordlist), ncol = length(wordlist), dimnames = list(wordlist))
-
-#name columns and rows
-colnames(adj) =  wordlist
-rownames(adj) = wordlist
-
-for (i in 1:length(unique(tags_tbl$id))){
-    list = tags[(tags$id==i),3]
-    list = as.vector(list$word)
-    k = NULL
-    if (length(list)>1){
-      for (k in 1:length(list)){
-        n = length(list)
-        l = m = NULL
-        for (l in 1:(n-1)){
-          for (m in (l+1):n){
-           
-            adj[list[l], list[m]] = adj[list[l], list[m]] + 1
-            adj[list[m], list[l]] = adj[list[m], list[l]] + 1
-            
-           }
-        }
-     }
-  }
-}
-
-
-
-# install.packages('netdiffuseR')
-library(netdiffuseR)
-
-# w <- abs(rnorm(nrow(edge_list)))
-
-# adj_matrix = edgelist_to_adjmat(edge_list[,1:2], undirected = TRUE, multiple = TRUE)
-
-# adj = get.adjacency(graph, sparse = FALSE)
-
-# adj = as_adjacency_matrix(graph, sparse=FALSE, edges = TRUE)
-
-```
-
-
-```{r}
-#make graphs
-
-
-
-library(ggraph)
-
-library(igraph)
-
-library(qgraph)
-# install.packages('qgraph')
-
-# graph_list = as.matrix(edge_list)
-
-graph = graph_from_adjacency_matrix(adj, mode = "undirected", weighted = TRUE)
-
-
-# graph<- igraph::graph.adjacency(adj, mode = "undirected")
-
-
-```
-
-
-```{r}
-
-# run louvain with edge weights 
-louvain_partition <- igraph::cluster_louvain(graph, weights = E(graph)$weight) 
-# assign communities to graph 
-graph$community <- louvain_partition$membership 
-
-table(louvain_partition$membership)
-
-# see how many communities there are 
-unique(graph$community) 
-
-
-
-
-communities <- data.frame() 
-for (i in unique(graph$community)) { 
-# create subgraphs for each community 
-  subgraph <- induced_subgraph(graph, v = which(graph$community == i)) 
-# get size of each subgraph 
-size <- igraph::gorder(subgraph) 
-# get betweenness centrality 
-btwn <- igraph::betweenness(subgraph) 
-communities <- communities %>% 
-  dplyr::bind_rows(data.frame(
-    community = i, 
-    n_tags = size, 
-    most_important = names(which(btwn == max(btwn))) 
-    ) 
-  ) 
-} 
-knitr::kable(
-  communities %>% 
-    dplyr::select(community, n_tags, most_important)
-)
-
-
-top_five <- data.frame() 
-for (i in unique(graph$community)) { 
-  # create subgraphs for each community 
-  subgraph <- induced_subgraph(graph, v =       which(graph$community == i)) 
-  # for larger communities 
-  if (igraph::gorder(subgraph) > 1) { 
-    # get degree 
-    degree <- igraph::degree(subgraph) 
-    # get top five degrees 
-    top <- names(head(sort(degree, decreasing = TRUE), 5)) 
-    result <- data.frame(community = i, rank = 1:5, character = top) 
-  } else { 
-    result <- data.frame(community = NULL, rank = NULL, character = NULL) 
-  } 
-  top_five <- top_five %>% 
-    dplyr::bind_rows(result) 
-} 
-knitr::kable(
-top_five %>% 
-  tidyr::pivot_wider(names_from = rank, values_from = character) 
-)
-
-
-
-```
-
-
-```{r}
-main_tags = c("environment","society","science","entertainment","technology")
-
-# give our nodes some properties, incl scaling them by degree and coloring them by community 
-V(graph)$size <- 1
-V(graph)$frame.color <- "white" 
-V(graph)$color <- graph$community 
-V(graph)$label <- V(graph)$name 
-V(graph)$label.cex <- 1
-
-
-# also color edges according to their starting node 
-edge.start <- ends(graph, es = E(graph), names = F)[,1] 
-E(graph)$color <- V(graph)$color[edge.start] 
-E(graph)$arrow.mode <- 0 
-
-v_labels <- which(V(graph)$name %in% main_tags) 
-for (i in 1:length(V(graph))) { 
-  if (!(i %in% v_labels)) { V(graph)$label[i] <- "" } 
-}
-
-
-l1 <- layout_on_sphere(graph)
-plot(graph, rescale = T, layout = l1, main = "'Tags Communities of TED Talks")
-
-
-l2 <- layout_with_mds(graph) 
-plot(graph, rescale = T, layout = l2, main = "Tags Communities of TED Talks")
-```
-
-
-```{r}
-
-# main_tags = c("environment","society","science","entertainment","technology")
-
-#write communities back into tbl
-tags_communities = as.data.frame(cbind(graph$community , wordlist)) %>% rename(word = wordlist)
-
-tags = tags %>% inner_join(tags_communities) 
-tags = tags %>% rename(community = V1)
-
-#which tag is the most often used per talk
-Mode <- function(x) {
-  ux <- unique(x)
-  ux[which.max(tabulate(match(x, ux)))]
-}
-
-tags = tags %>% group_by(id) %>% mutate(
-  community = as.numeric(community),
-  main_tag = Mode(community),
-  community_chr = case_when(
-    main_tag == 1 ~ "environment",
-    main_tag == 2 ~ "society",
-    main_tag == 4 ~ "entertainment",
-    main_tag == 3 ~ "science",
-    main_tag == 5 ~ "technology"
-  )
-)
-
-# table(tags$main_tag)
-
-
-
-#back to data
-id_community = tags %>% group_by(id) %>% summarise(
-  community = mean(main_tag)
-)
-
-data = data %>% inner_join(id_community)
-data = data %>% mutate(
-  community_chr = case_when(
-    community == 1 ~ "environment",
-    community == 2 ~ "society",
-    community == 4 ~ "entertainment",
-    community == 3 ~ "science",
-    community == 5 ~ "technology"
-  )
-)
-
-
-```
-
-
-
-
 
 # Data cleaning
 
@@ -520,6 +275,318 @@ cor(both_views$V1, both_views$V2)
 
 ```
 
+# Tags analysis
+
+
+```{r}
+#create tokens from tags
+tags_tbl = unnest_tokens(data, input = "tags", token = "words", to_lower = TRUE, output = "word")
+
+#remove NA
+tags_tbl = tags_tbl %>% filter(!is.na(word))
+
+#extract unique tags
+# unique(tags_tbl$word)
+
+#create wordlist for adjencency matrix
+wordlist = as.vector(unique(tags_tbl$word))
+
+#see number of mentions
+as.list(sort(table(tags_tbl$word),decreasing = TRUE))
+
+#omit redundant tags within talks
+tags_tbl = tags_tbl %>% group_by(id) %>%  distinct(word)
+
+
+#add numeration to tags_tbl
+tags_tbl = tags_tbl %>% group_by(id) %>% mutate(n = row_number())
+
+
+tags = tags_tbl %>% select(id, n, word)
+
+length(unique(tags$id))
+
+
+# adj.1.1 beide kommen vor
+
+#create empty adjecency matrix
+adj = matrix(0, nrow = length(wordlist), ncol = length(wordlist), dimnames = list(wordlist))
+
+#name columns and rows
+colnames(adj) =  wordlist
+rownames(adj) = wordlist
+# 
+# i = 2
+# 
+# l = 1
+# n = 6
+# m = 2
+# log = ""
+
+for (i in 1:length(unique(tags$id))){
+    list = tags[(tags$id==i),3]
+    list = as.vector(list$word)
+    k = NULL
+    if (length(list)>1){
+      # for (k in 1:length(list)){
+        n = length(list)
+        l = m = NULL
+        for (l in 1:(n-1)){
+          for (m in (l+1):n){
+           
+            adj[list[l], list[m]] = adj[list[l], list[m]] + 1
+            
+            # log_txt=(c(
+            #   list[l]," + ", list[m], " = ", adj[list[l], list[m]]
+            #   ))
+            
+            # log_txt = str_c(log_txt, sep = "", collapse = "")
+            # log = rbind(log, log_txt )
+            
+            
+            adj[list[m], list[l]] = adj[list[m], list[l]] + 1
+            
+            
+            
+           }
+        }
+     # }
+  }
+}
+
+#### ADD JACCARD COEFFICIENT #####
+
+# adj.1.1 beide kommen vor
+
+#create empty adjecency matrix
+jaccard = matrix(0, nrow = length(wordlist), ncol = length(wordlist), dimnames = list(wordlist))
+
+#name columns and rows
+colnames(jaccard) =  wordlist
+rownames(jaccard) = wordlist
+i = 1 
+j = 2
+
+
+for (i in 1:ncol(jaccard)){
+  for(j in 1:nrow(jaccard)){
+    if(adj[i,j]!=0){
+    intersection = adj[i,j]
+    n.x = tags_tbl %>% filter(word == colnames(adj)[i]) %>% nrow() 
+    n.x = n.x - intersection
+    
+    n.y = tags_tbl %>% filter(word == colnames(adj)[j]) %>% nrow() 
+    n.y = n.y - intersection
+    
+    jaccard[i,j] = intersection / (intersection + n.x + n.y)
+    }
+  }
+}
+write.csv(jaccard, file = "../01_Data/jaccard.csv")
+
+```
+
+
+```{r}
+# edge = adjmat_to_edgelist(adj)
+
+
+# install.packages('netdiffuseR')
+library(netdiffuseR)
+
+# w <- abs(rnorm(nrow(edge_list)))
+
+# adj_matrix = edgelist_to_adjmat(edge_list[,1:2], undirected = TRUE, multiple = TRUE)
+
+# adj = get.adjacency(graph, sparse = FALSE)
+
+# adj = as_adjacency_matrix(graph, sparse=FALSE, edges = TRUE)
+
+```
+
+
+```{r}
+#make graphs
+
+
+
+library(ggraph)
+
+library(igraph)
+
+library(qgraph)
+# install.packages('qgraph')
+
+# graph_list = as.matrix(edge_list)
+
+graph = graph_from_adjacency_matrix(jaccard, mode = "undirected", weighted = TRUE)
+
+
+# graph<- igraph::graph.adjacency(adj, mode = "undirected")
+
+
+```
+
+
+```{r}
+
+# run louvain with edge weights 
+louvain_partition <- igraph::cluster_louvain(graph, weights = E(graph)$weight) 
+# assign communities to graph 
+graph$community <- louvain_partition$membership 
+
+table(louvain_partition$membership)
+
+# see how many communities there are 
+unique(graph$community) 
+
+
+
+
+communities <- data.frame() 
+for (i in unique(graph$community)) { 
+# create subgraphs for each community 
+  subgraph <- induced_subgraph(graph, v = which(graph$community == i)) 
+# get size of each subgraph 
+size <- igraph::gorder(subgraph) 
+# get betweenness centrality 
+btwn <- igraph::betweenness(subgraph) 
+communities <- communities %>% 
+  dplyr::bind_rows(data.frame(
+    community = i, 
+    n_tags = size, 
+    most_important = names(which(btwn == max(btwn))) 
+    ) 
+  ) 
+} 
+knitr::kable(
+  communities %>% 
+    dplyr::select(community, n_tags, most_important)
+)
+
+
+top_five <- data.frame() 
+for (i in unique(graph$community)) { 
+  # create subgraphs for each community 
+  subgraph <- induced_subgraph(graph, v =       which(graph$community == i)) 
+  # for larger communities 
+  if (igraph::gorder(subgraph) > 1) { 
+    # get degree 
+    degree <- igraph::degree(subgraph) 
+    # get top five degrees 
+    top <- names(head(sort(degree, decreasing = TRUE), 5)) 
+    result <- data.frame(community = i, rank = 1:5, character = top) 
+  } else { 
+    result <- data.frame(community = NULL, rank = NULL, character = NULL) 
+  } 
+  top_five <- top_five %>% 
+    dplyr::bind_rows(result) 
+} 
+knitr::kable(
+top_five %>% 
+  tidyr::pivot_wider(names_from = rank, values_from = character) 
+)
+
+
+
+```
+
+
+```{r}
+main_tags = c("environment","society","technology","health","physics","entertainment","history","mind","marketing")
+
+# give our nodes some properties, incl scaling them by degree and coloring them by community 
+V(graph)$size <- 1
+V(graph)$frame.color <- "white" 
+V(graph)$color <- graph$community 
+V(graph)$label <- V(graph)$name 
+V(graph)$label.cex <- 1
+
+
+# also color edges according to their starting node 
+edge.start <- ends(graph, es = E(graph), names = F)[,1] 
+E(graph)$color <- V(graph)$color[edge.start] 
+E(graph)$arrow.mode <- 0 
+
+v_labels <- which(V(graph)$name %in% main_tags) 
+for (i in 1:length(V(graph))) { 
+  if (!(i %in% v_labels)) { V(graph)$label[i] <- "" } 
+}
+
+
+l1 <- layout_on_sphere(graph)
+plot(graph, rescale = T, layout = l1, main = "'Tags Communities of TED Talks")
+
+
+l2 <- layout_with_mds(graph) 
+plot(graph, rescale = T, layout = l2, main = "Tags Communities of TED Talks")
+```
+
+
+```{r}
+
+# tags_communities=tags = NULL
+#write communities back into tbl
+tags_communities = as.data.frame(cbind(graph$community , wordlist)) %>% rename(word = wordlist)
+
+tags = tags %>% inner_join(tags_communities) 
+tags = tags %>% rename(community = V1)
+
+#which tag is the most often used per talk
+Mode <- function(x) {
+  ux <- unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+# main_tags = c("environment","society","technology","health","physics","entertainment","history","mind","marketing")
+
+
+tags = tags %>% group_by(id) %>% mutate(
+  community = as.numeric(community),
+  main_tag = Mode(community),
+  community_chr = case_when(
+    main_tag == 1 ~ "environment",
+    main_tag == 2 ~ "society",
+    main_tag == 4 ~ "technology",
+    main_tag == 3 ~ "health",
+    main_tag == 5 ~ "physics",
+    main_tag == 6 ~ "entertainment",
+    main_tag == 7 ~ "history",
+    main_tag == 8 ~ "mind",
+    main_tag == 9 ~ "marketing",
+  )
+)
+
+# table(tags$main_tag)
+
+
+
+#back to data
+id_community = tags %>% group_by(id) %>% summarise(
+  community = mean(main_tag)
+)
+
+data = data %>% inner_join(id_community)
+data = data %>% mutate(
+  community_chr = case_when(
+    community == 1 ~ "environment",
+    community == 2 ~ "society",
+    community == 4 ~ "technology",
+    community == 3 ~ "health",
+    community == 5 ~ "physics",
+    community == 6 ~ "entertainment",
+    community == 7 ~ "history",
+    community == 8 ~ "mind",
+    community == 9 ~ "marketing",
+  )
+)
+# table(data$community_chr)
+# data$community
+
+```
+
+
+
+
 # The thing about the bad data after 2017
 
 It seems, that after 2017 there was a surge in uploads of new TED talks, which also were mainly unsuccesfull in terms of views. A lot of the "new" data even misses information about views. 
@@ -666,10 +733,21 @@ talks %>% filter(presenter == "Al Gore") %>% select(tags, community)
 
 # SentiWords with other dimensions
 
+# Analyse outcome variables for composite outcome
+
+```{r}
+outcomes = data %>% select(views_youtube, views, likes, dislike, like_dislike_ratio, no_comments) %>% na.omit()
+
+cor(outcomes)
+corrplot::corrplot(cor(outcomes), method = "number")
+```
+
+
 # Let's look at the data: 
 
 ```{r}
 #poisson regression analysis of talks with frequency measure
+# talks = data %>% left_join(posnegemo_wide, by = "id")
 
 #remove na talks
 talks = talks %>% filter(!is.na(affect), .preserve = TRUE)
@@ -689,6 +767,13 @@ talks %>% select(upload_date) %>%  arrange(desc(upload_date))
 
 ### analyses with log(views_youtube) or poisson ###
 tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
+```
+
+
+```{r}
+
+
+
 
 # normal (not log)
 affect_normal <- ggplot(talks, aes(affect, views_youtube)) +
@@ -702,15 +787,8 @@ affect <- ggplot(talks, aes(affect, log(views_youtube))) +
   geom_point() +labs(title= "Log(views_youtube) by % of affect words") + tilt_theme +
   labs(x = "% of affect words in a talk", y = "log(views_youtube)")
 
-affect 
+affect
 
-# positive emotion
-pos <- ggplot(talks, aes(posemo, log(views_youtube))) +
-  geom_point() +labs(title= "Log(views_youtube) by % of positive affect words") + tilt_theme
-
-pos 
-
-# talks %>% select(views_youtube, affect) %>% filter(!is.na(views_youtube))
 
 # poisson regression
 poiss_aff <- glm(views_youtube ~ affect + days_since_upload, family = "poisson", data = talks)
@@ -729,6 +807,30 @@ prediction = predict(poiss_aff)
 talks <-   cbind(talks, pred_affect = prediction)
 
 
+
+
+# plot the points (actual observations), regression line
+plot_affect <- ggplot(talks, aes(affect,log(views_youtube))) + 
+  geom_point() +
+  geom_smooth(aes(affect, pred_affect)) +
+  labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")
+
+plot_affect
+
+```
+
+
+
+```{r}
+# positive emotion
+pos <- ggplot(talks, aes(posemo, log(views_youtube))) +
+  geom_point() +labs(title= "Log(views_youtube) by % of positive affect words") + tilt_theme
+
+pos 
+
+# talks %>% select(views_youtube, affect) %>% filter(!is.na(views_youtube))
+
+
 # poisson regression of positive affect
 poiss_pos <- glm(views_youtube ~ posemo + days_since_upload, family = "poisson", data = talks)
 poiss_pos2 <- glm(views_youtube ~ posemo, family = "poisson", data = talks)
@@ -743,14 +845,6 @@ talks <- cbind(talks, pred_posemo = predict(poiss_pos))
 
 
 
-# plot the points (actual observations), regression line
-plot_affect <- ggplot(talks, aes(affect,log(views_youtube))) + 
-  geom_point() +
-  geom_smooth(aes(affect, pred_affect)) +
-  labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")
-
-plot_affect
-
 # posemo plot the points (actual observations), regression line
 plot_posemo <- ggplot(talks, aes(posemo, log(views_youtube))) + 
   geom_point() +
@@ -758,13 +852,14 @@ plot_posemo <- ggplot(talks, aes(posemo, log(views_youtube))) +
   labs(title= "Log(views_youtube) by % of positive affect words", x = "% of positive affect words in a talk", y = "log(views_youtube)")
 
 plot_posemo
+```
 
 
-
+```{r}
 ###### OTHER MEASURES #######
 
 # poisson regression
-poiss_aff <- glm(views_youtube ~ affect + mean_intensity + abs_mean_intensity + days_since_upload, family = "poisson", data = talks)
+poiss_aff <- glm(views_youtube ~ affect + mean_intensity + abs_mean_intensity + poly(days_since_upload, 2), family = "poisson", data = talks)
 summary(poiss_aff)
 
 #without days since upload --> wow, the model fits way worse. thats really good!
@@ -780,9 +875,9 @@ prediction = predict(poiss_aff)
 talks <-   cbind(talks, pred_affect2 = prediction)
 
 # plot the points (actual observations), regression line
-plot_affect2 <- ggplot(talks, aes(affect,log(views_youtube))) + 
+plot_affect2 <- ggplot(talks, aes(mean_intensity,log(views_youtube))) + 
   geom_point() +
-  geom_smooth(aes(affect, pred_affect2)) +
+  geom_smooth(aes(mean_intensity, pred_affect2)) +
   labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")
 
 plot_affect2

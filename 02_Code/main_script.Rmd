@@ -729,9 +729,9 @@ model_tags <- glm(views_youtube ~ affect + community + days_since_upload, family
 summary(model_tags)
 
 
-talks %>% filter(presenter == "Amy Cuddy") %>% select(tags, community)
+# talks %>% filter(presenter == "Amy Cuddy") %>% select(tags, community)
 
-
+# table(talks$community_chr)
 ```
 
 
@@ -776,7 +776,7 @@ hist(data$engagement)
 
 
 ```{r}
-#Principal component analyis
+#Principal component analysis
 
 # Datensatz data2 für die Analyse
 # library(psych)

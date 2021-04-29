@@ -58,6 +58,10 @@ library(party)
 # install.packages("partykit")
 library(partykit)
 library(lubridate)
+library(netdiffuseR)
+library(ggraph)
+library(igraph)
+library(qgraph)
 
 #round numbers
 options(scipen=999)
@@ -353,76 +357,64 @@ for (i in 1:length(unique(tags$id))){
      # }
   }
 }
-
-#### ADD JACCARD COEFFICIENT #####
-
-# adj.1.1 beide kommen vor
-
-#create empty adjecency matrix
-jaccard = matrix(0, nrow = length(wordlist), ncol = length(wordlist), dimnames = list(wordlist))
-
-#name columns and rows
-colnames(jaccard) =  wordlist
-rownames(jaccard) = wordlist
-i = 1 
-j = 2
+```
 
 
-for (i in 1:ncol(jaccard)){
-  for(j in 1:nrow(jaccard)){
-    if(adj[i,j]!=0){
-    intersection = adj[i,j]
-    n.x = tags_tbl %>% filter(word == colnames(adj)[i]) %>% nrow() 
-    n.x = n.x - intersection
-    
-    n.y = tags_tbl %>% filter(word == colnames(adj)[j]) %>% nrow() 
-    n.y = n.y - intersection
-    
-    jaccard[i,j] = intersection / (intersection + n.x + n.y)
-    }
-  }
-}
-write.csv(jaccard, file = "../01_Data/jaccard.csv")
+
+
+```{r}
+
+###### NOTE: JACCARD COEFFICIENT CALCULATION takes a long time. therefore I already calculated them and saved the adjencency matrix as jaccard.csv in the data folder, the following code is still here to provide the information on how it was done ######
+
+
+#read jaccard adjecency matrix
+jaccard = read_csv(file="../01_Data/jaccard.csv")
+
+rownames(jaccard) = jaccard$X1
+jaccard = as.matrix(jaccard)
+jaccard = jaccard[,-1]
+
+
+
+# #### ADD JACCARD COEFFICIENT #####
+# 
+# # adj.1.1 beide kommen vor
+# 
+# #create empty adjecency matrix
+# jaccard = matrix(0, nrow = length(wordlist), ncol = length(wordlist), dimnames = list(wordlist))
+# 
+# #name columns and rows
+# colnames(jaccard) =  wordlist
+# rownames(jaccard) = wordlist
+# i = 1 
+# j = 2
+# 
+# 
+# for (i in 1:ncol(jaccard)){
+#   for(j in 1:nrow(jaccard)){
+#     if(adj[i,j]!=0){
+#     intersection = adj[i,j]
+#     n.x = tags_tbl %>% filter(word == colnames(adj)[i]) %>% nrow() 
+#     n.x = n.x - intersection
+#     
+#     n.y = tags_tbl %>% filter(word == colnames(adj)[j]) %>% nrow() 
+#     n.y = n.y - intersection
+#     
+#     jaccard[i,j] = intersection / (intersection + n.x + n.y)
+#     }
+#   }
+# }
+# write.csv(jaccard, file = "../01_Data/jaccard.csv")
 
 ```
 
 
-```{r}
-# edge = adjmat_to_edgelist(adj)
-
-
-# install.packages('netdiffuseR')
-library(netdiffuseR)
-
-# w <- abs(rnorm(nrow(edge_list)))
-
-# adj_matrix = edgelist_to_adjmat(edge_list[,1:2], undirected = TRUE, multiple = TRUE)
-
-# adj = get.adjacency(graph, sparse = FALSE)
-
-# adj = as_adjacency_matrix(graph, sparse=FALSE, edges = TRUE)
-
-```
-
 
 ```{r}
-#make graphs
 
-
-
-library(ggraph)
-
-library(igraph)
-
-library(qgraph)
-# install.packages('qgraph')
-
-# graph_list = as.matrix(edge_list)
-
+#Prepare graph creation
 graph = graph_from_adjacency_matrix(jaccard, mode = "undirected", weighted = TRUE)
 
-
-# graph<- igraph::graph.adjacency(adj, mode = "undirected")
 
 
 ```
@@ -520,7 +512,19 @@ plot(graph, rescale = T, layout = l1, main = "'Tags Communities of TED Talks")
 
 l2 <- layout_with_mds(graph) 
 plot(graph, rescale = T, layout = l2, main = "Tags Communities of TED Talks")
+
+
+# Infomap
+imc <- cluster_infomap(graph)
+membership(imc)
+communities(imc)
+plot(louvain_partition, graph)
+
+
 ```
+
+
+
 
 
 ```{r}
@@ -725,7 +729,7 @@ model_tags <- glm(views_youtube ~ affect + community + days_since_upload, family
 summary(model_tags)
 
 
-talks %>% filter(presenter == "Al Gore") %>% select(tags, community)
+talks %>% filter(presenter == "Amy Cuddy") %>% select(tags, community)
 
 
 ```
@@ -736,10 +740,60 @@ talks %>% filter(presenter == "Al Gore") %>% select(tags, community)
 # Analyse outcome variables for composite outcome
 
 ```{r}
-outcomes = data %>% select(views_youtube, views, likes, dislike, like_dislike_ratio, no_comments) %>% na.omit()
+outcomes = data %>% select(views_youtube, views, likes, dislike, no_comments) %>% na.omit()
 
 cor(outcomes)
 corrplot::corrplot(cor(outcomes), method = "number")
+
+
+#Dislikes and number of comments
+data %>% ggplot(aes(x=log(dislike), y= log(no_comments))) + geom_point()
+
+#Views and likes
+data %>% ggplot(aes(x=log(views_youtube), y= log(likes))) + geom_point()
+
+
+#likes and dislikes
+data %>% ggplot(aes(x=log(likes), y= log(dislike))) + geom_point()
+
+#views and number comments
+data %>% ggplot(aes(x=log(likes), y= log(no_comments))) + geom_point()
+
+
+
+#Principal component analyis
+
+# Datensatz data2 für die Analyse
+library(psych)
+# if (Daten=="Rohdaten") {
+# data2 <- as.matrix(na.omit(data[, Variablen, drop=FALSE]))
+# } else {
+# data <- as.matrix(data)
+# N <- as.numeric(data[1,1])  # Stichprobengroesse einlesen
+# matr <- data[4:nrow(data),] # Dreiecksmatrix einlesen
+# # Dreiecksmatrix in symmetrische Matrix verwandeln
+# matr[upper.tri(matr)] <- t(matr)[upper.tri(matr)]
+# SD <- as.matrix(data[3,])   # Standardabweichungen einlesen
+# matr <- SD%*%t(SD)*matr # Kovarianzmatrix berechnen
+# data2 <- matr
+# }
+
+
+
+# Kaiser, Meyer, Olkin Measure of Sampling Adequacy
+kmo <- KMO(outcomes); n.obs <- NA
+
+
+# Hauptkomponenten- oder Hauptachsenanalyse
+
+m <- principal(outcomes, nfactors=2, rotate="none", covar=FALSE, n.obs=n.obs)
+Faktorwerte <- m$scores
+
+
+# if (Rotation=="oblimin") list("Anti-image correlation"=kmo$Image, KMO=kmo, Analyse=m, Strukturmatrix=m$Structure) 
+
+list("Anti-image correlation"=kmo$Image, KMO=kmo, Analyse=m)
+
 ```
 
 
@@ -752,7 +806,7 @@ corrplot::corrplot(cor(outcomes), method = "number")
 #remove na talks
 talks = talks %>% filter(!is.na(affect), .preserve = TRUE)
 talks = talks %>% filter(!is.na(views_youtube), .preserve = TRUE)
-talks = talks %>% filter(!is.na(like_dislike_ratio), .preserve = TRUE)
+talks = talks %>% filter(!is.na(no_comments), .preserve = TRUE)
 
 #Convert the variable "date_published" into an actual date 
 talks$upload_date <- as.Date(talks$upload_date, format = "%y/%m/%d")
@@ -770,118 +824,118 @@ tilt_theme <- theme(axis.text.x=element_text(angle=45, hjust=1))
 ```
 
 
+
+
 ```{r}
+#Descriptive analysis of relation between outcomes and predictors
 
 
-
-
-# normal (not log)
-affect_normal <- ggplot(talks, aes(affect, views_youtube)) +
-  geom_point() +labs(title= "Log(views_youtube) by % of affect words") + tilt_theme
-
-affect_normal 
-
-
-# using log(views_youtube)
-affect <- ggplot(talks, aes(affect, log(views_youtube))) +
+# affective frequency using log(views_youtube)
+af_freq_views <- ggplot(talks, aes(affect, log(views_youtube))) +
   geom_point() +labs(title= "Log(views_youtube) by % of affect words") + tilt_theme +
-  labs(x = "% of affect words in a talk", y = "log(views_youtube)")
+  labs(x = "% of affect words in a talk", y = "log(views_youtube)")+ geom_smooth(method = "lm")
+af_freq_views
 
-affect
-
-
-# poisson regression
-poiss_aff <- glm(views_youtube ~ affect + days_since_upload, family = "poisson", data = talks)
-summary(poiss_aff)
-
-#without days since upload --> wow, the model fits way worse. thats really good!
-poiss_aff2 <- glm(views_youtube ~ affect, family = "poisson", data = talks)
-summary(poiss_aff2)
+# affective frequency using log(dislike)
+af_freq_dislike <- ggplot(talks, aes(affect, log(dislike))) +
+  geom_point() +labs(title= "Log(dislike) by % of affect words") + tilt_theme +
+  labs(x = "% of affect words in a talk", y = "log(dislike)")+ geom_smooth(method = "lm")
+af_freq_dislike
 
 
-#the chisq test shows the significance of days since upload as a predictor and even better fit! 
-anova(poiss_aff2, poiss_aff, test = "Chisq")
+
+# average sentiment using log(views_youtube)
+ave_sent_views <- ggplot(talks, aes(mean_intensity, log(views_youtube))) +
+  geom_point() +labs(title= "Log(views_youtube) by mean_intensity") + tilt_theme +
+  labs(x = "mean_intensity", y = "log(views_youtube)")+ geom_smooth(method = "lm")
+ave_sent_views 
+
+# average sentiment using log(dislike)
+ave_sent_dislike <- ggplot(talks, aes(affect, log(dislike))) +
+  geom_point() +labs(title= "Log(dislike) by mean_intensity") + tilt_theme +
+  labs(x = "mean_intensity", y = "log(dislike)")+ geom_smooth(method = "lm")
+ave_sent_dislike
+
+```
+
+
+```{r}
+# poisson regression views
+m_views <- glm(views_youtube ~ affect + mean_intensity + poly(days_since_upload, 2), family = "poisson", data = talks)
+summary(m_views)
 
 # add predicted log(views_youtube) to talks
-prediction = predict(poiss_aff)
-talks <-   cbind(talks, pred_affect = prediction)
-
-
+prediction = predict(m_views)
+talks <-   cbind(talks, pred_m_views = prediction)
 
 
 # plot the points (actual observations), regression line
-plot_affect <- ggplot(talks, aes(affect,log(views_youtube))) + 
+plot_m_views <- ggplot(talks, aes(affect,log(views_youtube))) + 
   geom_point() +
-  geom_smooth(aes(affect, pred_affect)) +
+  geom_smooth(aes(affect, pred_m_views)) +
   labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")
 
-plot_affect
+plot_m_views
+
+```
+
+
+```{r}
+# poisson regression no_comments
+m_comments <- glm(no_comments ~ affect + mean_intensity + poly(days_since_upload, 2), family = "poisson", data = talks)
+summary(m_comments)
+# range(talks$no_comments)
+
+# add predicted log(no_comments) to talks
+prediction = predict(m_comments)
+talks <-   cbind(talks, pred_m_comments = prediction)
+
+
+# plot the points (actual observations), regression line
+plot_m_comments <- ggplot(talks, aes(affect,log(no_comments))) + 
+  geom_point() +
+  geom_smooth(aes(affect, pred_m_comments)) +
+  labs(title= "Log(no_comments) by % of affect words", x = "% of affect words in a talk", y = "log(no_comments)")
+
+plot_m_comments
 
 ```
 
 
 
 ```{r}
-# positive emotion
-pos <- ggplot(talks, aes(posemo, log(views_youtube))) +
-  geom_point() +labs(title= "Log(views_youtube) by % of positive affect words") + tilt_theme
-
-pos 
-
-# talks %>% select(views_youtube, affect) %>% filter(!is.na(views_youtube))
-
-
-# poisson regression of positive affect
-poiss_pos <- glm(views_youtube ~ posemo + days_since_upload, family = "poisson", data = talks)
-poiss_pos2 <- glm(views_youtube ~ posemo, family = "poisson", data = talks)
-
-summary(poiss_pos)
-
-#the chisq test shows the significance of days since upload as a predictor and even better fit! 
-anova(poiss_pos2, poiss_pos, test = "Chisq")
-
-# add predicted log(views_youtube) to talks
-talks <- cbind(talks, pred_posemo = predict(poiss_pos))
-
-
-
-# posemo plot the points (actual observations), regression line
-plot_posemo <- ggplot(talks, aes(posemo, log(views_youtube))) + 
-  geom_point() +
-  geom_smooth(aes(posemo, pred_posemo)) +
-  labs(title= "Log(views_youtube) by % of positive affect words", x = "% of positive affect words in a talk", y = "log(views_youtube)")
-
-plot_posemo
+# # positive emotion
+# pos <- ggplot(talks, aes(posemo, log(views_youtube))) +
+#   geom_point() +labs(title= "Log(views_youtube) by % of positive affect words") + tilt_theme
+# 
+# pos 
+# 
+# # talks %>% select(views_youtube, affect) %>% filter(!is.na(views_youtube))
+# 
+# 
+# # poisson regression of positive affect
+# poiss_pos <- glm(views_youtube ~ posemo + days_since_upload, family = "poisson", data = talks)
+# poiss_pos2 <- glm(views_youtube ~ posemo, family = "poisson", data = talks)
+# 
+# summary(poiss_pos)
+# 
+# #the chisq test shows the significance of days since upload as a predictor and even better fit! 
+# anova(poiss_pos2, poiss_pos, test = "Chisq")
+# 
+# # add predicted log(views_youtube) to talks
+# talks <- cbind(talks, pred_posemo = predict(poiss_pos))
+# 
+# 
+# 
+# # posemo plot the points (actual observations), regression line
+# plot_posemo <- ggplot(talks, aes(posemo, log(views_youtube))) + 
+#   geom_point() +
+#   geom_smooth(aes(posemo, pred_posemo)) +
+#   labs(title= "Log(views_youtube) by % of positive affect words", x = "% of positive affect words in a talk", y = "log(views_youtube)")
+# 
+# plot_posemo
 ```
 
-
-```{r}
-###### OTHER MEASURES #######
-
-# poisson regression
-poiss_aff <- glm(views_youtube ~ affect + mean_intensity + abs_mean_intensity + poly(days_since_upload, 2), family = "poisson", data = talks)
-summary(poiss_aff)
-
-#without days since upload --> wow, the model fits way worse. thats really good!
-poiss_aff2 <- glm(views_youtube ~ affect, family = "poisson", data = talks)
-summary(poiss_aff2)
-
-
-#the chisq test shows the significance of days since upload as a predictor and even better fit! 
-anova(poiss_aff2, poiss_aff, test = "Chisq")
-
-# add predicted log(views_youtube) to talks
-prediction = predict(poiss_aff)
-talks <-   cbind(talks, pred_affect2 = prediction)
-
-# plot the points (actual observations), regression line
-plot_affect2 <- ggplot(talks, aes(mean_intensity,log(views_youtube))) + 
-  geom_point() +
-  geom_smooth(aes(mean_intensity, pred_affect2)) +
-  labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")
-
-plot_affect2
-```
 
 
 Smooth sentiment arcs
@@ -904,6 +958,8 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
 #z standardize the sentiment values
 token_tbl$z_sent_values = scale(token_tbl$sent_values)
 ```
+
+
 
 Sentiment Arcs for the most viewed talks 
 ```{r}

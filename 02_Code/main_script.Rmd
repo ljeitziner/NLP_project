@@ -740,7 +740,7 @@ talks %>% filter(presenter == "Amy Cuddy") %>% select(tags, community)
 # Analyse outcome variables for composite outcome
 
 ```{r}
-outcomes = data %>% select(views_youtube, views, likes, dislike, no_comments) %>% na.omit()
+outcomes = data %>% select(views_youtube, likes, dislike, no_comments) %>% na.omit()
 
 cor(outcomes)
 corrplot::corrplot(cor(outcomes), method = "number")
@@ -759,12 +759,27 @@ data %>% ggplot(aes(x=log(likes), y= log(dislike))) + geom_point()
 #views and number comments
 data %>% ggplot(aes(x=log(likes), y= log(no_comments))) + geom_point()
 
+#composite outoome variable
+data = data %>% mutate(
+  z_views_youtube = scale(views_youtube),
+  z_likes = scale(likes),
+  z_dislike = scale(dislike),
+  z_no_comment = scale(no_comments)
+)
+outcomes
+z_outcomes = scale(outcomes)
+data = data %>% mutate(
+  engagement = (z_views_youtube + 2*z_likes + 3*z_dislike + 4*z_no_comment)/10
+)
+hist(data$engagement)
+```
 
 
+```{r}
 #Principal component analyis
 
 # Datensatz data2 für die Analyse
-library(psych)
+# library(psych)
 # if (Daten=="Rohdaten") {
 # data2 <- as.matrix(na.omit(data[, Variablen, drop=FALSE]))
 # } else {

@@ -29,16 +29,12 @@ Additional variables contained in the dataset stem from LIWC. They are, for exam
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 
-library(dplyr)
+library(tidyverse)
 library(tidytext)
-# citation("tidytext")
-library(dplyr)
 library(stringr)
 library(stopwords)
-library(ggplot2)
 library(textdata)
 library(readr)
-library(tidyverse)
 library(ggrepel) 
 library(viridis)
 library(stringr) 
@@ -48,14 +44,10 @@ library(ClusterR)
 library(cluster) 
 library(kmed)
 library(pander)
-# install.packages("cstab")
 library(cstab)
-# install.packages("sentimentr")
 library(sentimentr)
 library(caret)
-# install.packages("party")
 library(party)
-# install.packages("partykit")
 library(partykit)
 library(lubridate)
 library(netdiffuseR)
@@ -69,6 +61,11 @@ options(scipen=999)
 ```
 
 # Data preparation
+
+- Reading of the transcripts and engagement values
+- changing of formats
+- Omitting non-youtube talks
+
 ```{r, message = F, warning=F}
 #load data  
 
@@ -104,120 +101,7 @@ data = data %>% mutate(
 data = data %>% mutate(
   like_dislike_ratio = dislike/likes
 )
-```
 
-
-
-
-# Data cleaning
-
-
-```{r}
-
-###### NOTE #######
-# This code was written to run a lasso algorithm to see, which variables predict the good/bad classifier best.
-# Since the solution was to omit non-youtube videos and ted-ed videos, this code has lost its purpose 
-
-
-#here we try to clean the data from the 2017 problematic
-# 
-# 
-# ### TOP-Down approach ###
-# 
-# #omit all independent ted talks
-# # unique(data$event)
-# 
-# #mark all TEDx events
-# data = data %>% mutate(
-#   tedx = case_when(
-#     #identify TEDx events
-#     str_detect(data$event, "TEDx") ~ "TEDx",
-#     !str_detect(data$event, "TEDx") ~ "TED"
-#   )
-# )
-# 
-# # unique(data$tedx)
-# data$tedx = as.factor(data$tedx)
-# #filter out all TEDx events
-# # data = data %>% filter(tedx == "TED")
-# 
-# 
-# 
-# ### Bottom up Analysis ###
-# #define bad data and good data
-# data = data %>% mutate(
-#   good_bad = case_when(
-#     (upload_date >= "2017-06-01" & log(views) < 13.5) ~ 1,
-#     !(upload_date >= "2017-06-01" & log(views) < 13.5)  ~ 0
-#     ) 
-# )
-# data$good_bad = as.factor(data$good_bad)
-# data$event = as.factor(data$event)
-# # table(data$event)
-# # data = data %>% filter(!is.na(good_bad))
-# # data = na.omit(data)
-# 
-# 
-# #filter
-# bad_data = data %>% filter(upload_date >= "2017-06-01" & log(views) < 13.5)
-# good_data = data %>% filter(!(upload_date >= "2017-06-01" & log(views) < 13.5))
-# 
-# #omit recent videos (since 2020/01/01)
-# # data = data %>% filter(upload_date <= "2020-01-01")
-# 
-# 
-# ### lasso analysis of what predicts good/bad data ###
-# 
-# train_index <- createDataPartition(data$good_bad, p = .8, list = FALSE)
-# # train and test sets
-# data_train <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad, days_since_upload,like_dislike_ratio ) %>% slice(train_index)
-# data_test  <- data %>% select(id, duration, views, views_youtube, likes, dislike, tedx, good_bad, days_since_upload,like_dislike_ratio ) %>% slice(-train_index)
-# 
-# data_train <- data_train %>% mutate_if(is.character, factor)
-# data_test <- data_test %>% mutate_if(is.character, factor)
-# 
-# 
-# # Tuning ------------------------------------------------------------------
-# 
-# # install.packages("glmnet")
-# 
-# # Set training method to "none" for simple fitting
-# ctrl_cv <- trainControl(method = "cv", number = 10)
-# 
-# 
-# 
-# # Lasso -------------------------------------------------------------------
-# 
-# 
-# 
-# # Vector of lambda values to try
-# lambda_vec <- seq(.001, .0003, length=100)
-# 
-# # 
-# # # lasso regression
-# # grad_tune_glm <- train(form = good_bad ~ .,
-# #                        data = data_train,
-# #                        method = "glmnet",
-# #                        trControl = ctrl_cv,
-# #                        preProcess = c("center", "scale"),  
-# #                        tuneGrid = expand.grid(alpha = 1, 
-# #                                               lambda = lambda_vec),
-# #                        na.action = na.pass)
-# 
-# # 
-# # predictions_lasso <- grad_tune_glm %>% predict(data_test)
-# # 
-# # plot(grad_tune_glm)
-# # 
-# # coef(grad_tune_glm$finalModel, 
-# #      grad_tune_glm$bestTune$lambda)
-# 
-# 
-
-
-```
-
-```{r}
 
 #alle nicht youtube entfernen
 data = data %>% filter(!is.na(views_youtube))
@@ -230,7 +114,6 @@ summary_by_event = data %>% group_by(event) %>% summarise(
 table(complete.cases(data$views))
 
 # unique(summary_by_event$event)
-
 summary_by_event = summary_by_event %>% arrange(mean_views)
 summary_by_event %>%  ggplot(aes(x = reorder(event, -mean_views), y = mean_views)) + 
   geom_point()+
@@ -248,6 +131,7 @@ summary_by_event = summary_by_event %>% left_join(events_number)
 
 ```{r}
 
+#mark all TED-Ed videos
 data = data %>% mutate(
   ted_ed = case_when(event=="TED-Ed" ~ 1,
                      event!="TED-Ed" ~ 0
@@ -272,14 +156,17 @@ data %>% select(upload_date, views) %>% arrange(upload_date) %>% ggplot(aes(uplo
   theme_minimal()
 
 #are the variables views and views_youtube similar?
-both_views = as.data.frame(cbind(data$views, data$views_youtube))
-both_views = na.omit(both_views)
-cor(both_views$V1, both_views$V2)
+# both_views = as.data.frame(cbind(data$views, data$views_youtube))
+# both_views = na.omit(both_views)
+# cor(both_views$V1, both_views$V2)
   
 
 ```
 
-# Tags analysis
+# Tags analysis preparation
+
+- Tokenization of Tags
+- Adjencency Matrix of tags that occur with each other
 
 
 ```{r}
@@ -296,7 +183,7 @@ tags_tbl = tags_tbl %>% filter(!is.na(word))
 wordlist = as.vector(unique(tags_tbl$word))
 
 #see number of mentions
-as.list(sort(table(tags_tbl$word),decreasing = TRUE))
+# as.list(sort(table(tags_tbl$word),decreasing = TRUE))
 
 #omit redundant tags within talks
 tags_tbl = tags_tbl %>% group_by(id) %>%  distinct(word)
@@ -308,7 +195,7 @@ tags_tbl = tags_tbl %>% group_by(id) %>% mutate(n = row_number())
 
 tags = tags_tbl %>% select(id, n, word)
 
-length(unique(tags$id))
+# length(unique(tags$id))
 
 
 # adj.1.1 beide kommen vor
@@ -357,12 +244,7 @@ for (i in 1:length(unique(tags$id))){
      # }
   }
 }
-```
 
-
-
-
-```{r}
 
 ###### NOTE: JACCARD COEFFICIENT CALCULATION takes a long time. therefore I already calculated them and saved the adjencency matrix as jaccard.csv in the data folder, the following code is still here to provide the information on how it was done ######
 
@@ -406,11 +288,6 @@ jaccard = jaccard[,-1]
 # }
 # write.csv(jaccard, file = "../01_Data/jaccard.csv")
 
-```
-
-
-
-```{r}
 
 #Prepare graph creation
 graph = graph_from_adjacency_matrix(jaccard, mode = "undirected", weighted = TRUE)
@@ -418,6 +295,11 @@ graph = graph_from_adjacency_matrix(jaccard, mode = "undirected", weighted = TRU
 
 
 ```
+
+# Tags analysis
+- Louvain 
+- Community detection
+- Assign communities to talks
 
 
 ```{r}
@@ -480,54 +362,47 @@ top_five %>%
 )
 
 
-
-```
-
-
-```{r}
+#define main tags
 main_tags = c("environment","society","technology","health","physics","entertainment","history","mind","marketing")
 
-# give our nodes some properties, incl scaling them by degree and coloring them by community 
-V(graph)$size <- 1
-V(graph)$frame.color <- "white" 
-V(graph)$color <- graph$community 
-V(graph)$label <- V(graph)$name 
-V(graph)$label.cex <- 1
 
+#### PLOTTING #####
 
-# also color edges according to their starting node 
-edge.start <- ends(graph, es = E(graph), names = F)[,1] 
-E(graph)$color <- V(graph)$color[edge.start] 
-E(graph)$arrow.mode <- 0 
+# # give our nodes some properties, incl scaling them by degree and coloring them by community 
+# V(graph)$size <- 1
+# V(graph)$frame.color <- "white" 
+# V(graph)$color <- graph$community 
+# V(graph)$label <- V(graph)$name 
+# V(graph)$label.cex <- 1
+# 
+# 
+# # also color edges according to their starting node 
+# edge.start <- ends(graph, es = E(graph), names = F)[,1] 
+# E(graph)$color <- V(graph)$color[edge.start] 
+# E(graph)$arrow.mode <- 0 
+# 
+# v_labels <- which(V(graph)$name %in% main_tags) 
+# for (i in 1:length(V(graph))) { 
+#   if (!(i %in% v_labels)) { V(graph)$label[i] <- "" } 
+# }
+# 
+# 
+# #plot network 1
+# l1 <- layout_on_sphere(graph)
+# plot(graph, rescale = T, layout = l1, main = "'Tags Communities of TED Talks")
+# 
+# 
+# #plot network 2
+# l2 <- layout_with_mds(graph) 
+# plot(graph, rescale = T, layout = l2, main = "Tags Communities of TED Talks")
+# 
+# 
+# # Infomap
+# imc <- cluster_infomap(graph)
+# membership(imc)
+# communities(imc)
+# plot(louvain_partition, graph)
 
-v_labels <- which(V(graph)$name %in% main_tags) 
-for (i in 1:length(V(graph))) { 
-  if (!(i %in% v_labels)) { V(graph)$label[i] <- "" } 
-}
-
-
-l1 <- layout_on_sphere(graph)
-plot(graph, rescale = T, layout = l1, main = "'Tags Communities of TED Talks")
-
-
-l2 <- layout_with_mds(graph) 
-plot(graph, rescale = T, layout = l2, main = "Tags Communities of TED Talks")
-
-
-# Infomap
-imc <- cluster_infomap(graph)
-membership(imc)
-communities(imc)
-plot(louvain_partition, graph)
-
-
-```
-
-
-
-
-
-```{r}
 
 # tags_communities=tags = NULL
 #write communities back into tbl
@@ -544,6 +419,7 @@ Mode <- function(x) {
 # main_tags = c("environment","society","technology","health","physics","entertainment","history","mind","marketing")
 
 
+#create tag_chr
 tags = tags %>% group_by(id) %>% mutate(
   community = as.numeric(community),
   main_tag = Mode(community),
@@ -569,6 +445,7 @@ id_community = tags %>% group_by(id) %>% summarise(
   community = mean(main_tag)
 )
 
+#create community_chr
 data = data %>% inner_join(id_community)
 data = data %>% mutate(
   community_chr = case_when(
@@ -587,8 +464,6 @@ data = data %>% mutate(
 # data$community
 
 ```
-
-
 
 
 # The thing about the bad data after 2017
@@ -631,6 +506,8 @@ sentiwords = sentiwords %>% rename(value = y, word = x)
 
 
 # Frequency of affect words
+- Get affect words via sentiwords lexicon
+
 ```{r, message = F, warning=F}
 #relative position of the word for the sentiment analysis -> arc, also add wordcount for LIWC analysis
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
@@ -641,7 +518,7 @@ token_tbl = token_tbl %>% group_by(id) %>% mutate(
 # citation(tidytext)
 
 #load the sentiment word from the "afinn" repository
-afinn = get_sentiments("afinn")
+# afinn = get_sentiments("afinn")
 
 
 # citation("afinn")
@@ -712,7 +589,9 @@ cor_table = talks %>% select(affect, posemo, negemo, mean_intensity, abs_mean_in
 # talks %>% ggplot(aes(x = abs_mean_intensity, y = mean_intensity)) + geom_point()
 
 ```
-# Tags analysis
+
+# Tags descriptive analysis
+- barplot of frequencies
 
 ```{r}
 
@@ -735,9 +614,8 @@ summary(model_tags)
 ```
 
 
-# SentiWords with other dimensions
 
-# Analyse outcome variables for composite outcome
+# Analysis of outcome variables for composite outcome
 
 ```{r}
 outcomes = data %>% select(views_youtube, likes, dislike, no_comments) %>% na.omit()
@@ -774,45 +652,9 @@ data = data %>% mutate(
 hist(data$engagement)
 ```
 
+ 
 
-```{r}
-#Principal component analysis
-
-# Datensatz data2 für die Analyse
-# library(psych)
-# if (Daten=="Rohdaten") {
-# data2 <- as.matrix(na.omit(data[, Variablen, drop=FALSE]))
-# } else {
-# data <- as.matrix(data)
-# N <- as.numeric(data[1,1])  # Stichprobengroesse einlesen
-# matr <- data[4:nrow(data),] # Dreiecksmatrix einlesen
-# # Dreiecksmatrix in symmetrische Matrix verwandeln
-# matr[upper.tri(matr)] <- t(matr)[upper.tri(matr)]
-# SD <- as.matrix(data[3,])   # Standardabweichungen einlesen
-# matr <- SD%*%t(SD)*matr # Kovarianzmatrix berechnen
-# data2 <- matr
-# }
-
-
-
-# Kaiser, Meyer, Olkin Measure of Sampling Adequacy
-kmo <- KMO(outcomes); n.obs <- NA
-
-
-# Hauptkomponenten- oder Hauptachsenanalyse
-
-m <- principal(outcomes, nfactors=2, rotate="none", covar=FALSE, n.obs=n.obs)
-Faktorwerte <- m$scores
-
-
-# if (Rotation=="oblimin") list("Anti-image correlation"=kmo$Image, KMO=kmo, Analyse=m, Strukturmatrix=m$Structure) 
-
-list("Anti-image correlation"=kmo$Image, KMO=kmo, Analyse=m)
-
-```
-
-
-# Let's look at the data: 
+# Preparation - Inference analysis of sentiment words and engagement data
 
 ```{r}
 #poisson regression analysis of talks with frequency measure
@@ -872,6 +714,9 @@ ave_sent_dislike <- ggplot(talks, aes(affect, log(dislike))) +
 ave_sent_dislike
 
 ```
+
+
+# Inference analysis of sentiment words and engagement data
 
 
 ```{r}
@@ -1278,33 +1123,4 @@ pred %>% filter(cluster ==18)  %>%  ggplot(aes(views ,color=cluster, fill=cluste
 
 
 
-# Approach with sentimentr package
-
-```{r}
-
-
-#tokenize the transcripts 
-# data$transcript
-token_sentences = unnest_tokens(data, input = "transcript", token = "sentences", to_lower = TRUE, output = "sentence")
-
-#relative position of the word for the sentiment analysis -> arc, also add wordcount for LIWC analysis
-token_sentences = token_sentences %>% group_by(id) %>% mutate(
-  sentence_count = n(),
-  pos = 1:n(),
-  rel_pos = (pos-1)/max(pos-1)
-)
-
-
-### DOES NOT WORK YET ###
-# token_sentences = get_sentences(data$transcript)
-# sentiment=sentiment(token_sentences)
-
-#load the sentiment word from the "afinn" repository
-afinn = get_sentiments("afinn")
-
-#join the tokens with the sentiment words
-token_tbl <- inner_join(y = afinn,x = token_tbl)
-
-
-```
 

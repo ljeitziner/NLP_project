@@ -618,38 +618,24 @@ summary(model_tags)
 # Analysis of outcome variables for composite outcome
 
 ```{r}
-outcomes = data %>% select(views_youtube, likes, dislike, no_comments) %>% na.omit()
+
+#define composite outcome variable - engagement - via combination formula
+# engagement = (0.098 x Likes + 0.118 x Dislikes + 0.713 x Comments) / views
+ 
+data = data %>% mutate(
+  engagement = (0.098*likes + 0.118 * dislike + 0.713 * no_comments) / views_youtube
+)
+hist(data$engagement)
+
+
+
+outcomes = data %>% select(views_youtube, likes, dislike, no_comments, engagement) %>% na.omit()
 
 cor(outcomes)
 corrplot::corrplot(cor(outcomes), method = "number")
 
 
-#Dislikes and number of comments
-data %>% ggplot(aes(x=log(dislike), y= log(no_comments))) + geom_point()
 
-#Views and likes
-data %>% ggplot(aes(x=log(views_youtube), y= log(likes))) + geom_point()
-
-
-#likes and dislikes
-data %>% ggplot(aes(x=log(likes), y= log(dislike))) + geom_point()
-
-#views and number comments
-data %>% ggplot(aes(x=log(likes), y= log(no_comments))) + geom_point()
-
-#composite outoome variable
-data = data %>% mutate(
-  z_views_youtube = scale(views_youtube),
-  z_likes = scale(likes),
-  z_dislike = scale(dislike),
-  z_no_comment = scale(no_comments)
-)
-outcomes
-z_outcomes = scale(outcomes)
-data = data %>% mutate(
-  engagement = (z_views_youtube + 2*z_likes + 3*z_dislike + 4*z_no_comment)/10
-)
-hist(data$engagement)
 ```
 
  

@@ -1,0 +1,663 @@
+---
+title: "Markdown presentation"
+author: "Loris Jeitziner, Olivia Fischer and Nieves Schwab"
+date: "11/24/2020"
+output:
+  html_document: default
+  pdf_document: default
+---
+## Emotional Arcs in TED Talks 
+
+What does a great commercial, a sales pitch and a scientific presentation have in common? 
+
+They all try to tell (or sell) a compelling story. 
+
+Stories are appealing to us, as they use a tight and logical structure, they help us organize information. It has a logical progression, the classic story structure always looks the same pattern, first the context is set, and the hero is introduced. The hero has a problem or a challenge he has to solve. He struggles, then struggles more and finally he resolves the crises. Happy end. 
+
+This ups and downs in the stories are an important element, they capture the audience's interest and take them on an emotional journey. Kurt Vonnegut, proposed that there exist six "universal shapes" of stories, or emotional arcs, that follow specific pattern in stories. 
+
+We propose that emotion plays an important role in storytelling. And we wanted to analyze to which extent. To this purpose we have been looking at data from the masters of storytelling, the speakers of TED Talks. 
+
+According to Wikipedia: TED conferences (Technology, Entertainment, Design) is a media organization that posts talks online for free distribution, under the slogan "ideas worth spreading". They address a wide range of topics within the research and practice of science and culture, often thorugh storytelling. The speakers are given a maximum of 18 minutes to present ideas in the most innovative and engaging way as they can. 
+
+The dataset that we analyze contains 2,386 TED Talks from the years 1972 to 2017. It contains variables like the speaker, headline of the talk, duration, year of publication and... the number of views!
+
+In the last two weeks we have been analyzing this dataset in a data-driven manner, exploring if emotion/valence has an influence on the number of views a talk has. For this purpose we have defined the variable of views as our DV, defining talks with more views are more successful. 
+
+Additional variables contained in the dataset stem from LIWC. They are, for example: word count, tone, number of pos (e.g. ppron), affect,...
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(tidytext)
+library(lexicon)
+require(ggrepel)
+require(patchwork)
+library(lubridate)
+
+```
+
+# Data preparation
+
+- Reading of the transcripts and engagement values
+- changing of formats
+- Omitting non-youtube talks
+
+```{r, message = F, warning=F}
+#load data  
+data = read_csv("../01_Data/TED_dirk.csv", 
+                locale = locale(encoding = "UTF-8"))
+
+#change duration to date/time format
+#omit letters
+data = data %>% mutate(
+  duration = str_replace_all(data$duration, "[:alpha:]" , ""),
+  duration = str_replace_all(data$duration, "[:blank:]" , ":"),
+  duration = ms(data$duration),
+  year = year(upload_date_youtube),
+  days_since_upload = difftime("2020-12-31", 
+                               upload_date_youtube, units = "days"), 
+  TEDx = str_detect(event, 'TEDx')) %>%
+  filter(!is.na(views_youtube))
+
+```
+
+# Tags analysis preparation
+
+- Tokenization of Tags
+- Adjencency Matrix of tags that occur with each other
+
+
+```{r}
+#create tokens from tags
+tags = str_split(data$tags, ',') %>% unlist() %>% unique()
+tags = tags[!is.na(tags)]
+
+# determine Jaccard mat
+tdm = sapply(tags, function(x) str_detect(data$tags[!is.na(data$tags)], x))
+same = t(tdm) %*% tdm
+different_1 = t(!tdm) %*% (tdm)
+different_2 = t(tdm) %*% (!tdm)
+tag_jacc_mat = same / (different_1 + different_2 + same)
+
+
+# Get cluster
+net = igraph::graph_from_adjacency_matrix(tag_jacc_mat, 
+                                    mode = "undirected",
+                                    weighted = TRUE,
+                                    diag = F)
+cl = igraph::cluster_louvain(net) %>% lapply(function(x) x)
+
+# sort tags
+ns = colSums(tdm)
+cl = lapply(cl, function(x) x[order(ns[x], decreasing = T)])
+names(cl) = c("Environment","Entertainment","Society","Health","Mind","Cosmos")
+
+top10 = sapply(cl, function(x) names(sort(colMeans(tdm[,x]), decreasing = T))[1:10])
+apply(top10, 1, function(x) cat(paste0(x, collapse=' & '), "\\\\ \n"))
+
+# count tags
+regex_cl = sapply(cl, function(x) paste0(x, collapse='|'))
+count_cl = sapply(regex_cl, function(x) str_count(data$tags, x))
+
+# determine PPMI
+p_count_cl = count_cl / sum(count_cl, na.rm=T)
+ppmi_count_cl = log(p_count_cl / t(colSums(p_count_cl, na.rm=T) %*% t(rowSums(p_count_cl, na.rm=T))))
+ppmi_count_cl[ppmi_count_cl<0] = 0
+
+
+# assign labels
+labels = names(cl)
+inds = apply(ppmi_count_cl, 1, function(x) ifelse(all(is.na(x)), NA, which.max(x)))
+data$topic = labels[inds]
+
+
+```
+
+
+# Method
+
+```{r}
+
+text = data %>% arrange(desc(views_youtube)) %>% slice(1) %>% pull(transcript) %>% str_sub(1, 883)
+
+sent = tibble(text = text) %>% 
+  unnest_tokens(input = text,  output = "word",
+                to_lower = TRUE) %>% 
+  left_join(hash_sentiment_sentiword %>% rename(value = y), 
+            by = c("word" = "x")) 
+
+sent %>% filter(!is.na(value)) %>% print(n = 100)
+
+```
+
+
+
+# Add sentiment
+
+```{r}
+# calculate sentiment var
+sents_text = data %>% 
+  unnest_tokens(input = transcript,  output = "word",
+                to_lower = TRUE) %>% 
+  left_join(hash_sentiment_sentiword %>% rename(value = y), 
+            by = c("word" = "x")) %>% 
+  group_by(id) %>% 
+  summarize(prop_sent = mean(!is.na(value)),
+            avg_sent = mean(value, na.rm=T),
+            avg_pos_sent = mean(value[value>0], na.rm=T),
+            avg_pos_sent = mean(value[value<0], na.rm=T))
+data = data %>% left_join(sents_text, by = "id")
+
+```
+
+
+# Sentiment reference
+
+```{r}
+
+get_sent = function(x) {
+  tbl = tibble(text = read_file(x)) %>% 
+    unnest_tokens(input = text,  output = "word",
+                to_lower = TRUE) %>% 
+  left_join(hash_sentiment_sentiword %>% rename(value = y), 
+            by = c("word" = "x")) %>% 
+  summarize(prop_sent = mean(!is.na(value)),
+            avg_sent = mean(value, na.rm=T))
+}
+
+files = list.files('../01_Data/texts', full.names = T)
+
+
+sent_ref = lapply(files, get_sent) %>% 
+  do.call(what = 'rbind') %>% 
+  as_tibble() %>% 
+  mutate(type = c("Movies", "News", "Soaps","TV", "Wikipedia"))
+
+sent_ref = sent_ref %>% 
+  bind_rows(sents_text %>% summarize(prop_sent = mean(prop_sent),
+                                     avg_sent = mean(avg_sent, na.rm=T), 
+                                     type = "TED"))
+
+# dens = MASS::kde2d(sents_text$prop_sent[!is.na(sents_text$avg_sent)], 
+#                    sents_text$avg_sent[!is.na(sents_text$avg_sent)], n = 100)
+# 
+# dens = as_tibble(expand.grid(dens$x, dens$y)) %>% 
+#   bind_cols(z = c((dens$z)))
+# 
+# zs = sort(dens$z, decreasing = T)
+# zs_cum = cumsum(zs)/sum(zs)
+# lims = sapply(c(.95, .5, .05), function(x) zs[min(which(zs_cum >= x))])
+
+
+sent_distr = data %>% 
+  ggplot(aes(x = prop_sent, y = avg_sent)) + 
+  # geom_contour_filled(data = dens, 
+  #              aes(x = Var1, y = Var2, z = z), breaks = c(lims, 250)) +
+  geom_point(alpha = .2, mapping = aes(size = (views_youtube))) + 
+  theme_minimal() + 
+  xlim(c(.15, .29)) + ylim(c(-.04, .14)) + 
+  guides(fill = F, size = F) + 
+  geom_label_repel(data = sent_ref, aes(label = type), 
+                   nudge_x = .005, nudge_y = .01, hjust=0) +
+  geom_point(data = sent_ref, size = 4, shape = 15, mapping = aes(col = type)) + 
+  scale_size(range=c(.1,5)) + scale_fill_manual(values = grey(seq(.9,.6,length=4))) + 
+  labs(x = "Density", y = "Valence") + scale_color_viridis_d() + guides(col = F)
+
+ggsave("../03_Figures/sentiment_distribution.pdf", device = "pdf", width = 5, height = 5, plot = sent_distr)
+
+```
+
+
+# Emotional Arcs in TED Talks
+
+We are interested in discovering if there are distinct emotional arcs and if they can predict the number of views a TED Talk will have. To plot the sentiment arcs first we have to tokenize the transcripts of the talks and add the sentiment values. 
+
+Tokenize the data and add sentiment
+
+```{r, message = F, warning=F}
+
+# calculate sentiment var
+sents_text = data %>% 
+  unnest_tokens(input = transcript,  output = "word",
+                to_lower = TRUE) %>% 
+  left_join(hash_sentiment_sentiword %>% rename(value = y), 
+            by = c("word" = "x"))
+
+# smooth fun
+smooth = function(value, n = 20, bw = .1, norm = TRUE){ 
+  rel_pos = seq(0, 1, length = length(value))
+  rel_pos = rel_pos[!is.na(value)]
+  value = value[!is.na(value)]
+  target_pos = seq(0, 1, length=n)
+  sm = sapply(target_pos, function(x) {
+    weights = dnorm(rel_pos, x, bw + abs(.5-x)/10)
+    sum(value * (weights / sum(weights)), na.rm=T)
+    })
+  if(norm == TRUE) sm = (sm - mean(sm))/sd(sm)
+  sm
+  }
+
+# smooth
+arcs = split(sents_text$value, sents_text$id)
+smooth_arcs = sapply(arcs, smooth, n = 20) %>% t()
+
+nas = apply(smooth_arcs, 1, function(x) all(!is.na(x)))
+smooth_arcs = smooth_arcs[nas,]
+
+# # PATHWAY 1 ----
+# 
+# # cluster
+# arc_dists = dist(smooth_arcs) %>% as.matrix()
+# arc_dists = 1/arc_dists
+# arc_dists[arc_dists == Inf] = 0
+# 
+# arc_graph = igraph::graph_from_adjacency_matrix(arc_dists, mode = "undirected",
+#                                                 diag = FALSE, weighted = TRUE)
+# cls = igraph::cluster_louvain(arc_graph) 
+# cls = lapply(1:length(cls), function(x) cls[[x]])
+# cl_assign = rep(1:length(cls), lengths(cls))
+# names(cl_assign) = unlist(cls)
+# 
+# # put together
+# colnames(smooth_arcs) = paste0('pos_', 1:ncol(smooth_arcs))
+# arcs_tbl = tibble(
+#   id = as.numeric(rownames(smooth_arcs)), 
+#   cl = cl_assign[rownames(smooth_arcs)],
+#   type = c("Rags to riches","Riches to rags","Man in a hole","Icarus")[cl]) %>% 
+#   bind_cols(smooth_arcs %>% as_tibble())
+# data = data %>% left_join(arcs_tbl, by = "id")
+
+
+# PATHWAY 2 ----
+
+scale = function(x) (x - mean(x))/sd(x)
+cl6 = tibble(type = "Oedipus", x = 1:20, y = sin(seq(-pi, pi, length = 20)) %>% scale())
+cl5 = tibble(type = "Cinderella", x = 1:20, y = sin(seq(0, 2*pi, length = 20)) %>% scale())
+cl4 = tibble(type = "Icarus", x = 1:20, y = sin(seq(0, pi, length = 20)) %>% scale())
+cl3 = tibble(type = "Man in a hole", x = 1:20, y = sin(seq(-pi, 0, length = 20)) %>% scale())
+cl1 = tibble(type = "Rags to riches", x = 1:20, y = sin(seq(0, pi/2, length = 20)) %>% scale())
+cl2 = tibble(type = "Riches to rags", x = 1:20, y = sin(seq(pi/2, pi, length = 20)) %>% scale())
+prototypes = cl1 %>% bind_rows(cl2) %>% bind_rows(cl3) %>% bind_rows(cl4) %>% bind_rows(cl5) %>% bind_rows(cl6) %>% mutate(type = as_factor(type))
+prototype_list = list(cl1$y, cl2$y, cl3$y, cl4$y, cl5$y, cl6$y)
+
+eucl = function(x, y){ mean((x - y)**2)}
+closest = apply(smooth_arcs, 1, function(x) which.min(sapply(prototype_list, function(y) eucl(x,y))))
+
+props = round((table(closest) / length(closest))*100,1)
+names(props) = unique(prototypes$type)
+
+prototypes = prototypes %>% mutate(label = as_factor(paste0(type, " (", props[type], "%)")))
+
+# COMBINE ------
+
+colnames(smooth_arcs) = paste0('pos_', 1:ncol(smooth_arcs))
+arcs_tbl = tibble(
+  id = as.numeric(rownames(smooth_arcs)), 
+  cl = closest[rownames(smooth_arcs)],
+  label = factor(unique(prototypes$label)[cl], levels = unique(prototypes$label))) %>% 
+  bind_cols(smooth_arcs %>% as_tibble())
+data = data %>% left_join(arcs_tbl, by = "id")
+
+arcs = ggplot(arcs_tbl %>% 
+         pivot_longer(starts_with('pos_'), names_to = "pos", values_to = "Valence") %>% 
+         mutate(pos = as_factor(pos)), 
+       aes(x = pos, y = Valence)) + 
+  geom_line(alpha = .01, mapping = aes(group = id)) + 
+  geom_line(data = prototypes, mapping = aes(x = x, y = y, col = label), size=2) +
+  facet_wrap(~label, ncol = 3) + 
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+        strip.text = element_text(hjust = 0, size=10, face = "italic")) + 
+  guides(col = F) + scale_color_viridis_d()
+
+ggsave('../03_Figures/arc_types.pdf',width=7, height=5, device='pdf', plot = arcs)
+
+```
+
+
+# Visualize sentiment moderators
+
+
+```{r}
+
+# TOPIC ------
+
+topics = data %>% 
+  filter(!is.na(topic)) %>% 
+  group_by(topic) %>% 
+  summarize(n = n(),
+            m_avg_sent = mean(avg_sent, na.rm=T), 
+            sd_avg_sent = qnorm(.975)*sd(avg_sent, na.rm=T) / sqrt(n),
+            m_prop_sent = mean(prop_sent, na.rm=T), 
+            sd_prop_sent = qnorm(.975)*sd(prop_sent, na.rm=T) / sqrt(n)) %>% 
+  arrange(m_avg_sent + m_prop_sent) %>% 
+  mutate(topic = as_factor(topic))
+
+p_avg_topic = ggplot(topics, aes(x = m_avg_sent, y = topic, col = topic)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_avg_sent - sd_avg_sent, xend  = m_avg_sent + sd_avg_sent, 
+                             y = topic, yend = topic)) +
+  theme_minimal() + scale_color_viridis_d() + guides(col = F)+ 
+  labs(x = "Valence", y = "") + theme(axis.title.y = element_blank()) + 
+  theme(axis.text.x = element_text(angle=30, hjust=1))
+
+p_prop_topic = ggplot(topics, aes(x = m_prop_sent, y = topic, col = topic)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_prop_sent - sd_prop_sent, xend  = m_prop_sent + sd_prop_sent, 
+                             y = topic, yend = topic)) +
+  theme_minimal() + scale_color_viridis_d() + guides(col = F)+ 
+  labs(x = "Density") + theme(axis.title.y = element_blank()) + 
+  theme(axis.text.x = element_text(angle=30, hjust=1))
+ 
+
+# YEARS ------
+
+years = data %>% 
+  mutate(year = lubridate::year(upload_date_youtube)) %>% 
+  group_by(year) %>% 
+  summarize(n = n(),
+            m_avg_sent = mean(avg_sent, na.rm=T), 
+            sd_avg_sent = qnorm(.975)*sd(avg_sent, na.rm=T) / sqrt(n),
+            m_prop_sent = mean(prop_sent, na.rm=T), 
+            sd_prop_sent = qnorm(.975)*sd(prop_sent, na.rm=T) / sqrt(n)) %>% 
+  filter(n > 10) %>% 
+  arrange(desc(year)) %>% 
+  mutate(year = factor(year, levels = as.character(2020:2007)))
+
+p_avg_year = ggplot(years, aes(x = m_avg_sent, y = year, col = year)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_avg_sent - sd_avg_sent, xend  = m_avg_sent + sd_avg_sent, 
+                             y = year, yend = year)) +
+  theme_minimal()+ scale_color_viridis_d() + guides(col = F) + 
+  labs(x = "Valence", y = "Year") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1))
+
+p_prop_year = ggplot(years, aes(x = m_prop_sent, y = year, col = year)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_prop_sent - sd_prop_sent, xend  = m_prop_sent + sd_prop_sent, 
+                             y = year, yend = year)) +
+  theme_minimal() + scale_color_viridis_d() + guides(col = F) + 
+  labs(x = "Density", y = "Year") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1))
+
+# ARCS ------
+
+ppmi = function(x) {
+  x = x / sum(x)
+  log(x / rowSums(x) %*% t(colSums(x)))
+  }
+
+norm = function(x) {
+  x / rowSums(x)
+  }
+
+topic_tab = table(data$topic, data$type)
+topic_norm = norm(topic_tab) %>% as.data.frame() %>% 
+  as_tibble() %>% 
+  mutate(Var1 = factor(as.character(Var1), 
+                       levels = rev(c("Mind","Entertainment","Health",
+                                        "Cosmos","Environment","Society"))))
+
+year_tab = table(data$year[data$year != 2006], data$type[data$year != 2006])
+year_norm = norm(year_tab) %>% as.data.frame() %>% 
+  as_tibble() %>%   
+  mutate(Var1 = factor(as.character(Var1), 
+                       levels = 2020:2007))
+
+p_topic_arc = topic_norm %>% 
+  ggplot(aes(x = Var2, y = Var1, fill = Freq)) + 
+  geom_tile() + scale_fill_viridis_c(option = "cividis") +
+  geom_text(aes(label = paste0(round(Freq, 2)*100, "")), size = 1.7, col = "white") +
+  guides(fill = F) + 
+  theme_minimal() + 
+  theme(axis.title = element_blank(),
+        axis.text.x = element_text(angle=30, hjust=1))
+
+p_year_arc = year_norm %>% 
+  ggplot(aes(x = Var2, y = Var1, fill = Freq)) + 
+  geom_tile() + scale_fill_viridis_c(option = "cividis") +
+  geom_text(aes(label = paste0(round(Freq, 2)*100, "")), size = 1.7, col = "white") +
+  guides(fill = F) + 
+  theme_minimal() + 
+  theme(axis.title.x = element_blank(),
+        axis.text.x = element_text(angle=30, hjust=1)) +
+  labs(y = "Year")
+
+
+
+sent_moderator = 
+  p_avg_topic + p_avg_year + 
+  p_prop_topic + p_prop_year +  
+  p_topic_arc + p_year_arc +
+  plot_layout(widths = c(1.9,2), ncol=2) + plot_annotation(tag_levels = c('A'))
+
+ggsave('../03_Figures/sentiment_moderators.pdf',width=5, height=9, device='pdf', plot = sent_moderator)
+
+```
+
+
+# Engagement
+
+```{r}
+
+# get logs
+data = data %>% 
+  mutate(views_youtube_log = log(views_youtube), 
+         likes_log = log(likes),
+         dislike_log = log(dislike),
+         no_comments_log = log(no_comments))
+
+pca = psych::pca(data %>% select(ends_with('_log')), nfactors = 2, rotate = 'varimax')
+
+# save factors
+data$popularity = pca$scores[,1]
+data$polarity = pca$scores[,2]
+
+
+
+```
+
+# Engagement means
+
+
+
+```{r}
+
+
+# VALENCE -----
+
+sent_avg_engage = data %>% 
+  filter(!is.na(avg_sent)) %>% 
+  group_by(var = ifelse(avg_sent > median(avg_sent, na.rm=T), "High valence", "Low valence")) %>% 
+  summarize(n = n(),
+            m_popularity = mean(popularity, na.rm=T),
+            ci_popularity = qnorm(.975)*sd(popularity, na.rm=T)/sqrt(n),
+            m_polarity = mean(polarity, na.rm=T),
+            ci_polarity = qnorm(.975)*sd(polarity, na.rm=T)/sqrt(n)) %>% 
+  mutate(group = "Valence") %>% 
+  mutate(var = factor(var, levels = c("Low valence","High valence")))
+
+sent_prop_engage = data %>% 
+  filter(!is.na(prop_sent)) %>% 
+  group_by(var = ifelse(prop_sent > median(prop_sent, na.rm=T), "High density", "Low density")) %>% 
+  summarize(n = n(),
+            m_popularity = mean(popularity, na.rm=T),
+            ci_popularity = qnorm(.975)*sd(popularity, na.rm=T)/sqrt(n),
+            m_polarity = mean(polarity, na.rm=T),
+            ci_polarity = qnorm(.975)*sd(polarity, na.rm=T)/sqrt(n)) %>% 
+  mutate(group = "Density") 
+
+
+topic_engage = data %>% 
+  filter(!is.na(topic)) %>% 
+  rename(var = topic) %>% 
+  group_by(var) %>% 
+  summarize(n = n(),
+            m_popularity = mean(popularity, na.rm=T),
+            ci_popularity = qnorm(.975)*sd(popularity, na.rm=T)/sqrt(n),
+            m_polarity = mean(polarity, na.rm=T),
+            ci_polarity = qnorm(.975)*sd(polarity, na.rm=T)/sqrt(n)) %>% 
+  mutate(group = "Genre")
+
+type_engage = data %>% 
+  filter(!is.na(type)) %>% 
+  rename(var = type) %>% 
+  group_by(var) %>% 
+  summarize(n = n(),
+            m_popularity = mean(popularity, na.rm=T),
+            ci_popularity = qnorm(.975)*sd(popularity, na.rm=T)/sqrt(n),
+            m_polarity = mean(polarity, na.rm=T),
+            ci_polarity = qnorm(.975)*sd(polarity, na.rm=T)/sqrt(n)) %>% 
+  mutate(group = "Arc")
+
+
+engagement = sent_avg_engage %>% 
+  bind_rows(sent_prop_engage) %>% 
+  bind_rows(topic_engage) %>% 
+  bind_rows(type_engage) %>% 
+  mutate(group = factor(group, levels = c("Valence", "Density", "Arc", "Genre")))
+
+
+# POPULARITY ------
+
+pop_valence = ggplot(engagement %>% 
+                       filter(group == "Valence") %>% 
+  mutate(var = factor(var, levels = c("Low valence","High valence"))), 
+                     aes(x = m_popularity, y = var, col = var)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_popularity - ci_popularity, xend  = m_popularity + ci_popularity, 
+                             y = var, yend = var)) +
+  theme_minimal() + guides(col = F) + 
+  labs(x = "Popularity") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1), 
+        axis.title.y = element_blank(),
+        strip.text = element_text(hjust = 0, size=10)) + 
+  facet_wrap(~group) + scale_color_manual(values = viridis::viridis(6)[c(2, 5)])
+
+pop_density = ggplot(engagement %>% 
+                       filter(group == "Density") %>% 
+  mutate(var = factor(var, levels = c("Low density","High density"))), 
+                     aes(x = m_popularity, y = var, col = var)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_popularity - ci_popularity, xend  = m_popularity + ci_popularity, 
+                             y = var, yend = var)) +
+  theme_minimal()+ guides(col = F) + 
+  labs(x = "Popularity") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1), 
+        axis.title.y = element_blank(),
+        strip.text = element_text(hjust = 0, size=10)) +  
+  facet_wrap(~group) + scale_color_manual(values = viridis::viridis(6)[c(2, 5)])
+
+pop_arc = ggplot(engagement %>% filter(group == "Arc"), 
+                     aes(x = m_popularity, y = var, col = var)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_popularity - ci_popularity, xend  = m_popularity + ci_popularity, 
+                             y = var, yend = var)) +
+  theme_minimal()+ scale_color_viridis_d() + guides(col = F) + 
+  labs(x = "Popularity") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1), 
+        axis.title.y = element_blank(),
+        strip.text = element_text(hjust = 0, size=10)) + 
+  facet_wrap(~group)
+
+pop_grenre = ggplot(engagement %>% 
+                      filter(group == "Genre") %>% 
+  mutate(var = factor(var, levels = rev(c("Mind","Entertainment","Health","Cosmos","Environment","Society")))), 
+                     aes(x = m_popularity, y = var, col = var)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_popularity - ci_popularity, xend  = m_popularity + ci_popularity, 
+                             y = var, yend = var)) +
+  theme_minimal()+ scale_color_viridis_d() + guides(col = F) + 
+  labs(x = "Popularity") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1), 
+        axis.title.y = element_blank(),
+        strip.text = element_text(hjust = 0, size=10)) + 
+  facet_wrap(~group)
+
+
+# POLARITY ------
+
+pol_valence = ggplot(engagement %>% 
+                       filter(group == "Valence") %>% 
+  mutate(var = factor(var, levels = c("Low valence","High valence"))), 
+                     aes(x = m_polarity, y = var, col = var)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_polarity - ci_polarity, xend  = m_polarity + ci_polarity, 
+                             y = var, yend = var)) +
+  theme_minimal() + guides(col = F) + 
+    labs(x = "Polarity") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1), 
+        axis.title.y = element_blank(),
+        strip.text = element_text(hjust = 0, size=10))+ 
+  facet_wrap(~group) + scale_color_manual(values = viridis::viridis(6)[c(2, 5)])
+
+pol_density = ggplot(engagement %>% 
+                       filter(group == "Density") %>% 
+  mutate(var = factor(var, levels = c("Low density","High density"))), 
+                     aes(x = m_polarity, y = var, col = var)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_polarity - ci_polarity, xend  = m_polarity + ci_polarity, 
+                             y = var, yend = var)) +
+  theme_minimal() + guides(col = F) + 
+    labs(x = "Polarity") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1), 
+        axis.title.y = element_blank(),
+        strip.text = element_text(hjust = 0, size=10))+ 
+  facet_wrap(~group) + scale_color_manual(values = viridis::viridis(6)[c(2, 5)])
+
+pol_arc = ggplot(engagement %>% filter(group == "Arc"), 
+                     aes(x = m_polarity, y = var, col = var)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_polarity - ci_polarity, xend  = m_polarity + ci_polarity, 
+                             y = var, yend = var)) +
+  theme_minimal() + scale_color_viridis_d() + guides(col = F) + 
+    labs(x = "Polarity") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1), 
+        axis.title.y = element_blank(),
+        strip.text = element_text(hjust = 0, size=10))+ 
+  facet_wrap(~group)
+
+pol_grenre = ggplot(engagement %>% filter(group == "Genre") %>% 
+  mutate(var = factor(var, levels = rev(c("Mind","Entertainment","Health","Cosmos","Environment","Society")))), 
+                     aes(x = m_polarity, y = var, col = var)) + 
+  geom_point(shape = 15, size = 4) + 
+  geom_segment(mapping = aes(x  = m_polarity - ci_polarity, xend  = m_polarity + ci_polarity, 
+                             y = var, yend = var)) +
+  theme_minimal() + scale_color_viridis_d() + guides(col = F) + 
+  labs(x = "Polarity") + 
+  theme(axis.text.x = element_text(angle=30, hjust=1), 
+        axis.title.y = element_blank(),
+        strip.text = element_text(hjust = 0, size=10)) + 
+  facet_wrap(~group)
+
+
+p_engagement = (pop_valence + pol_valence) / (pop_density+pol_density) / (pop_arc+pol_arc) / (pop_grenre+pol_grenre) + plot_layout(heights = c(1.8, 1.8, 6, 6)) + 
+  plot_annotation(tag_levels = c('A'))
+
+ggsave('../03_Figures/engagement.pdf',width=5, height=7, device='pdf', plot = p_engagement)
+
+
+```
+
+
+
+# Models
+
+```{r}
+# engagement
+
+m_popularity = lm(popularity ~ type + prop_sent + avg_sent + topic + upload_date_youtube, 
+                  data = data)
+anova(m_popularity)
+heplots::etasq(m_popularity)
+
+m_polarity = lm(polarity ~ type + prop_sent + avg_sent + topic + upload_date_youtube, data = data)
+anova(m_polarity)
+heplots::etasq(m_polarity)
+
+```
+
+
+

@@ -28,7 +28,7 @@ Additional variables contained in the dataset stem from LIWC. They are, for exam
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
-
+library(report)
 library(tidyverse)
 library(tidytext)
 library(stringr)
@@ -534,7 +534,7 @@ token_tbl <- inner_join(y = sentiwords,x = token_tbl)
 token_tbl = token_tbl %>% group_by(id) %>% mutate(
   affect = (n()/word_count)
 )
-
+# token_tbl$affect
 #add percentage of pos and neg words to the token_tbl
 token_tbl_pos = token_tbl %>% filter(value>0) %>% group_by(id) %>% mutate(
   posemo = n()/word_count,
@@ -618,38 +618,37 @@ summary(model_tags)
 # Analysis of outcome variables for composite outcome
 
 ```{r}
-outcomes = data %>% select(views_youtube, likes, dislike, no_comments) %>% na.omit()
 
-cor(outcomes)
-corrplot::corrplot(cor(outcomes), method = "number")
+#define composite outcome variable - engagement - via combination formula
+# engagement = (0.098 x Likes + 0.118 x Dislikes + 0.713 x Comments) / views
+ 
+talks = talks %>% mutate(
+  engagement_a = (0.106*likes + 0.127 * dislike + 0.767 * no_comments) / (views_youtube) ,
+  engagement_b = (1/6*likes + 2/6 * dislike + 3/6 * no_comments) / (views_youtube),
+  engagement_c = (1/3*likes +  1/3*dislike + 1/3*no_comments) / (views_youtube)
 
-
-#Dislikes and number of comments
-data %>% ggplot(aes(x=log(dislike), y= log(no_comments))) + geom_point()
-
-#Views and likes
-data %>% ggplot(aes(x=log(views_youtube), y= log(likes))) + geom_point()
-
-
-#likes and dislikes
-data %>% ggplot(aes(x=log(likes), y= log(dislike))) + geom_point()
-
-#views and number comments
-data %>% ggplot(aes(x=log(likes), y= log(no_comments))) + geom_point()
-
-#composite outoome variable
-data = data %>% mutate(
-  z_views_youtube = scale(views_youtube),
-  z_likes = scale(likes),
-  z_dislike = scale(dislike),
-  z_no_comment = scale(no_comments)
 )
-outcomes
-z_outcomes = scale(outcomes)
-data = data %>% mutate(
-  engagement = (z_views_youtube + 2*z_likes + 3*z_dislike + 4*z_no_comment)/10
+# hist(talks$engagement_c)
+
+talks %>%  ggplot(aes(engagement_c, log(likes))) + geom_point()
+
+
+outcomes = talks %>% select(views_youtube, likes, dislike, no_comments, engagement_c) %>% na.omit()
+
+outcomes_log = outcomes %>%  mutate(
+  likes = log(likes),
+  dislike = log(dislike),
+  no_comments = log(no_comments),
+  views_youtube = log(views_youtube)
+  
 )
-hist(data$engagement)
+
+
+cor(outcomes_log)
+corrplot::corrplot(cor(outcomes_log), method = "number")
+
+
+
 ```
 
  
@@ -693,25 +692,18 @@ af_freq_views <- ggplot(talks, aes(affect, log(views_youtube))) +
   labs(x = "% of affect words in a talk", y = "log(views_youtube)")+ geom_smooth(method = "lm")
 af_freq_views
 
-# affective frequency using log(dislike)
-af_freq_dislike <- ggplot(talks, aes(affect, log(dislike))) +
-  geom_point() +labs(title= "Log(dislike) by % of affect words") + tilt_theme +
-  labs(x = "% of affect words in a talk", y = "log(dislike)")+ geom_smooth(method = "lm")
-af_freq_dislike
+# affective frequency using log(views_youtube)
+af_freq_engagement <- ggplot(talks, aes(affect, engagement_c)) +
+  geom_point() +labs(title= "Engagement by % of affect words") + tilt_theme +
+  labs(x = "% of affect words in a talk", y = "Engagement")+ geom_smooth(method = "lm")
+af_freq_engagement
 
+# affective frequency using log(views_youtube)
+ave_intensity_engagement <- ggplot(talks, aes(abs_mean_intensity, engagement_c)) +
+  geom_point() +labs(title= "Engagement by mean_intensity") + tilt_theme +
+  labs(x = "mean intensity", y = "Engagement")+ geom_smooth(method = "lm")
+ave_intensity_engagement
 
-
-# average sentiment using log(views_youtube)
-ave_sent_views <- ggplot(talks, aes(mean_intensity, log(views_youtube))) +
-  geom_point() +labs(title= "Log(views_youtube) by mean_intensity") + tilt_theme +
-  labs(x = "mean_intensity", y = "log(views_youtube)")+ geom_smooth(method = "lm")
-ave_sent_views 
-
-# average sentiment using log(dislike)
-ave_sent_dislike <- ggplot(talks, aes(affect, log(dislike))) +
-  geom_point() +labs(title= "Log(dislike) by mean_intensity") + tilt_theme +
-  labs(x = "mean_intensity", y = "log(dislike)")+ geom_smooth(method = "lm")
-ave_sent_dislike
 
 ```
 
@@ -726,7 +718,7 @@ summary(m_views)
 
 # add predicted log(views_youtube) to talks
 prediction = predict(m_views)
-talks <-   cbind(talks, pred_m_views = prediction)
+talks = talks %>% mutate(pred_m_views = prediction)
 
 
 # plot the points (actual observations), regression line
@@ -734,9 +726,29 @@ plot_m_views <- ggplot(talks, aes(affect,log(views_youtube))) +
   geom_point() +
   geom_smooth(aes(affect, pred_m_views)) +
   labs(title= "Log(views_youtube) by % of affect words", x = "% of affect words in a talk", y = "log(views_youtube)")
-
 plot_m_views
+```
 
+
+```{r}
+
+m_engagegement <- lm(engagement_c ~ mean_intensity + affect + community_chr +  poly(days_since_upload, 2), data = talks)
+summary(m_engagegement)
+report(m_engagegement)
+
+
+# talks <-   cbind(talks, pred_m_views = prediction)
+prediction = predict(m_engagegement)
+talks = talks %>% mutate(pred_m_engagement = prediction)
+
+# plot the points (actual observations), regression line
+plot_m_engagement <- ggplot(talks, aes(affect, engagement)) + 
+  geom_point() +
+  geom_smooth(aes(affect, pred_m_engagement)) +
+  labs(title= "engagement by % of affect words", x = "% of affect words in a talk", y = "engagement")
+plot_m_engagement
+
+# hist(talks$affect)
 ```
 
 
@@ -748,8 +760,7 @@ summary(m_comments)
 
 # add predicted log(no_comments) to talks
 prediction = predict(m_comments)
-talks <-   cbind(talks, pred_m_comments = prediction)
-
+talks = talks %>% mutate(pred_m_comments = prediction)
 
 # plot the points (actual observations), regression line
 plot_m_comments <- ggplot(talks, aes(affect,log(no_comments))) + 
@@ -795,6 +806,8 @@ plot_m_comments
 # 
 # plot_posemo
 ```
+
+
 
 
 

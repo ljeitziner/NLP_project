@@ -657,6 +657,12 @@ m_polarity = lm(polarity ~ type + prop_sent + avg_sent + topic + upload_date_you
 anova(m_polarity)
 heplots::etasq(m_polarity)
 
+
+m_popularity = lm(polarity ~ type + prop_sent + avg_sent*topic + upload_date_youtube, 
+                  data = data)
+anova(m_popularity)
+summary(m_popularity)
+
 ```
 
 
